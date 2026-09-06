@@ -437,7 +437,13 @@ const CRIT = "0x1111111111111111111111111111111111111111" as Address;
 const STD = "0x2222222222222222222222222222222222222222" as Address;
 const DISC = "0x3333333333333333333333333333333333333333" as Address;
 
-function policy(): Policy {
+/**
+ * Small round numbers so every expectation below can be derived by hand.
+ * `over` exists because one case needs a different target runway: with a
+ * 200s target no balance can both breach the 100s minimum and leave a shed
+ * small enough for the discretionary tier to absorb alone.
+ */
+function policy(over: Partial<Policy> = {}): Policy {
   return {
     version: 1,
     chainId: 11155111,
@@ -452,6 +458,7 @@ function policy(): Policy {
       { address: DISC, label: "disc", tier: "discretionary", committedRateWeiPerSec: 100n, floorRateWeiPerSec: 0n },
     ],
     escalation: { webhook: "https://example.invalid/hook" },
+    ...over,
   };
 }
 
@@ -512,20 +519,29 @@ describe("decide — reduce", () => {
   });
 
   it("touches a higher tier only once every lower tier sits at its floor", () => {
-    // budget = 40000/200 = 200/sec. Outflow 300/sec, shed 100/sec:
-    // discretionary alone covers it, so standard and critical are untouched.
-    const d = decide(facts(40_000n, [100n, 100n, 100n]), policy());
+    // A 200s target cannot produce this case: breaching the 100s minimum needs
+    // balance < 30000, while a shed small enough for one tier needs >= 40000.
+    // With a 120s target: runway = 29000/300 = 96s, under the minimum.
+    // budget = 29000/120 = 241/sec, so the shed is 300 - 241 = 59/sec, which
+    // the discretionary stream absorbs alone: 100 - 59 = 41.
+    const d = decide(facts(29_000n, [100n, 100n, 100n]), policy({ targetRunwaySec: 120n }));
     expect(d.kind).toBe("reduce");
     expect(d.adjustments).toHaveLength(1);
     expect(d.adjustments[0]?.receiver).toBe(DISC);
-    expect(d.adjustments[0]?.toRateWeiPerSec).toBe(0n);
+    expect(d.adjustments[0]?.toRateWeiPerSec).toBe(41n);
     expect(d.escalation).toBeNull();
   });
 
-  it("emits nothing for a stream already at the rate it would set", () => {
-    // Discretionary already at 0: the only shed available is on lower tiers,
-    // and re-emitting a no-op write would cost gas for nothing.
-    const d = decide(facts(40_000n, [100n, 100n, 0n]), policy());
+  it("emits nothing for a stream that is already where the shed would leave it", () => {
+    // Discretionary already at 0, its floor. Outflow 200/sec on 15000 is a
+    // 75s runway, under the minimum. budget = 15000/200 = 75/sec, so 125/sec
+    // must go: standard down to its 50 floor, then critical takes 20 more and
+    // stops at 80. Discretionary has nothing left to give and must produce no
+    // adjustment at all — a write that changes nothing still costs gas.
+    const d = decide(facts(15_000n, [100n, 100n, 0n]), policy());
+    expect(d.kind).toBe("reduce");
+    expect(d.adjustments.map((a) => a.receiver)).toEqual([STD, CRIT]);
+    expect(d.adjustments.map((a) => a.toRateWeiPerSec)).toEqual([50n, 80n]);
     expect(d.adjustments.every((a) => a.fromRateWeiPerSec !== a.toRateWeiPerSec)).toBe(true);
   });
 });
@@ -700,11 +716,25 @@ Expected: FAIL — every restore case returns `kind: "hold"` with no adjustments
 
 - [ ] **Step 3: Implement the restore branch**
 
-Replace the early `hold` return in `decide` (the `runwaySec >= policy.minRunwaySec`
-branch) with a call to `considerRestore`, and add:
+Replace **both** early `hold` returns in `decide` with a call to `considerRestore`: the
+`netOutflow === 0n` branch (passing `null` as the runway) and the
+`runwaySec >= policy.minRunwaySec` branch.
+
+Routing the zero-outflow case here is the point of this task, not a detail. A treasury
+whose streams were all closed by an earlier shed has zero outflow and infinite runway,
+and it is exactly the account that should resume paying once money arrives. Returning
+`hold` there strands payroll off permanently — the one failure this project must not
+ship. The spec says the same in §6: *if runwaySec is null or runwaySec >= minRunwaySec,
+consider restoration.*
+
+Add:
 
 ```ts
-function considerRestore(facts: Facts, policy: Policy, runwaySec: bigint): Decision {
+function considerRestore(
+  facts: Facts,
+  policy: Policy,
+  runwaySec: bigint | null,
+): Decision {
   const hold: Decision = {
     kind: "hold",
     runwaySec,
@@ -1015,9 +1045,10 @@ export const CFA_FORWARDER_READ_ABI = [
 export const CFA_FORWARDER_ADDRESS = "0xcfA132E353cB4E398080B9700609bb008eceB125" as const;
 ```
 
-The forwarder address above must be confirmed against
-`keeperhub/protocols/superfluid.ts` (`CFA_FORWARDER_ADDRESS`, line 253) before this task
-is committed. If the two differ, the repository wins and this constant is corrected.
+The forwarder address above was confirmed byte for byte against
+`keeperhub/protocols/superfluid.ts:253-254` on 2026-09-06, where the surrounding comment
+records that Superfluid pins it identically across every chain it supports. Use it as
+written; no further check is needed for this task.
 
 - [ ] **Step 2: Write the failing tests**
 
