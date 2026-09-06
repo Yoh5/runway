@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import { CFA_FORWARDER_ADDRESS } from "./chain/abi.js";
@@ -228,7 +229,18 @@ async function main(): Promise<void> {
   await runCli(realCliDeps(), process.argv.slice(2));
 }
 
-main().catch((error: unknown) => {
-  console.error(reason(error));
-  process.exitCode = 1;
-});
+// Guards `main()` behind an entrypoint check: `node`/`tsx` sets
+// `process.argv[1]` to the script actually invoked, so this only matches
+// when this file is that script — never when it is merely imported (as
+// every test in this repo, and any future consumer, does). Without this
+// guard, importing this module for its exported `runCli`/`CliDeps` runs a
+// real tick against `realCliDeps()`: with a readable policy path in
+// `process.argv.slice(2)` and the four required env vars exported, that is a
+// live, non-dry-run broadcast to Sepolia triggered by nothing more than an
+// import.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((error: unknown) => {
+    console.error(reason(error));
+    process.exitCode = 1;
+  });
+}

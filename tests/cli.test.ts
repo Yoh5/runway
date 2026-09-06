@@ -172,3 +172,19 @@ describe("runCli — dry run", () => {
     await expect(runCli(deps, ["--dry-run"])).rejects.toThrow(/usage/i);
   });
 });
+
+describe("module import safety (C1)", () => {
+  it("importing src/cli.ts does not run main(): process.exitCode is untouched", () => {
+    // src/cli.ts is imported at the top of this very file (as it is by every
+    // test in this suite), which is exactly the scenario the entrypoint
+    // guard has to defend: a plain `import` must never execute `main()`.
+    // Before the guard, `main()` ran unconditionally at module scope, took
+    // the "no policy path" branch against the test runner's own argv, and
+    // its `.catch` set `process.exitCode = 1` — observable proof the import
+    // alone triggered a real run of the CLI's top-level logic. In the real
+    // danger scenario (a readable policy path in argv, the four KeeperHub/RPC
+    // env vars exported) that same unconditional call would broadcast a real
+    // transaction.
+    expect(process.exitCode).not.toBe(1);
+  });
+});
