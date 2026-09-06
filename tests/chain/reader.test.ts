@@ -147,6 +147,36 @@ describe("readFacts", () => {
     expect(facts.unlistedOutflowWeiPerSec).toBe(0n);
   });
 
+  it("redacts a hosted RPC provider's key baked into a failed read's error text (I4)", async () => {
+    // A hosted provider (Alchemy, Infura, ...) embeds its key in the URL
+    // path, not as basic-auth, so it survives into a thrown
+    // HttpRequestError's message untouched. deps.rpcUrl exists purely so
+    // readFacts can strip it back out before the text becomes a
+    // ReadFailure.reason.
+    const FAKE_KEY = "sk-fake-provider-key-9f3a";
+    const rpcUrl = `https://eth-sepolia.g.alchemy.com/v2/${FAKE_KEY}`;
+    const error = await readFacts(
+      {
+        client: {
+          readContract: async () => {
+            throw new Error(`fetch failed for ${rpcUrl}`);
+          },
+        },
+        rpcUrl,
+      },
+      policy(),
+      1_700_000_000,
+    ).catch((e: unknown) => e as ReadIncompleteError);
+
+    expect(error).toBeInstanceOf(ReadIncompleteError);
+    const readError = error as ReadIncompleteError;
+    for (const failure of readError.failures) {
+      expect(failure.reason).not.toContain(FAKE_KEY);
+    }
+    expect(readError.message).not.toContain(FAKE_KEY);
+    expect(readError.failures[0]?.reason).toContain("[redacted]");
+  });
+
   it("fails closed when getAccountFlowrate fails, exactly as a failing getFlowInfo does", async () => {
     await expect(
       readFacts(

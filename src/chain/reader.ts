@@ -1,5 +1,6 @@
 import { CFA_FORWARDER_ADDRESS, CFA_FORWARDER_READ_ABI, SUPER_TOKEN_READ_ABI } from "./abi.js";
 import type { Facts, Policy, Stream } from "../policy/types.js";
+import { reason, redact } from "../redact.js";
 
 export type ReadFailure = { what: string; reason: string };
 
@@ -26,11 +27,19 @@ export type PublicClientLike = {
   }) => Promise<unknown>;
 };
 
-export type ReaderDeps = { client: PublicClientLike };
-
-function reason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+export type ReaderDeps = {
+  client: PublicClientLike;
+  /**
+   * The RPC endpoint URL, kept here solely so a failed read can redact it out
+   * of the error text before it becomes a `ReadFailure.reason`. A hosted
+   * provider (Alchemy, Infura, ...) embeds its API key in the URL path
+   * itself, which survives into a thrown `HttpRequestError`'s message --
+   * viem's own credential stripping only handles basic-auth. Optional so
+   * every existing test double that has no secret to redact keeps compiling
+   * unchanged.
+   */
+  rpcUrl?: string;
+};
 
 /**
  * Reads the treasury's balance, its locked deposit and each policy
@@ -44,6 +53,10 @@ export async function readFacts(
   nowSec: number,
 ): Promise<Facts> {
   const failures: ReadFailure[] = [];
+  // Every `ReadFailure.reason` goes through this, not `reason(error)` alone:
+  // a hosted RPC provider's key travels in the URL path, not basic-auth, so
+  // it survives into a thrown HttpRequestError's message otherwise.
+  const safeReason = (error: unknown) => redact(reason(error), [deps.rpcUrl]);
 
   const balanceResult = await deps.client
     .readContract({
@@ -53,7 +66,7 @@ export async function readFacts(
       args: [policy.sender, BigInt(nowSec)],
     })
     .catch((error: unknown) => {
-      failures.push({ what: "realtimeBalanceOf", reason: reason(error) });
+      failures.push({ what: "realtimeBalanceOf", reason: safeReason(error) });
       return null;
     });
 
@@ -65,7 +78,7 @@ export async function readFacts(
       args: [policy.token, policy.sender],
     })
     .catch((error: unknown) => {
-      failures.push({ what: "getAccountFlowrate", reason: reason(error) });
+      failures.push({ what: "getAccountFlowrate", reason: safeReason(error) });
       return null;
     });
 
@@ -82,7 +95,7 @@ export async function readFacts(
         args: [policy.token, policy.sender, recipient.address],
       })
       .catch((error: unknown) => {
-        failures.push({ what: `getFlowInfo(${recipient.address})`, reason: reason(error) });
+        failures.push({ what: `getFlowInfo(${recipient.address})`, reason: safeReason(error) });
         return null;
       });
     if (flow !== null) {

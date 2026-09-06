@@ -320,6 +320,28 @@ describe("executeAdjustment", () => {
     expect(outcome.status).toBe("unresolved");
   });
 
+  it("redacts a hosted RPC provider's key out of a simulate revert reason too (I4)", async () => {
+    // deps.simulate is a real viem client in production (built in cli.ts)
+    // reading against the RPC endpoint; its thrown errors can embed a hosted
+    // provider's key baked into the URL path, and that text lands directly
+    // in `simulation.reason`, which this module returns as the "refused"
+    // outcome's detail.
+    const FAKE_RPC_KEY = "sk-fake-provider-key-should-never-leak-9f3a";
+    const rpcUrl = `https://eth-sepolia.g.alchemy.com/v2/${FAKE_RPC_KEY}`;
+    const outcome = await executeAdjustment(
+      baseDeps({
+        rpcUrl,
+        simulate: revertingSimulate(`CFA: ACL denied (request to ${rpcUrl} failed)`),
+      }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(outcome.status).toBe("refused");
+    expect(JSON.stringify(outcome)).not.toContain(FAKE_RPC_KEY);
+    expect(JSON.stringify(outcome)).toContain("[redacted]");
+  });
+
   it("never puts the API key in any outcome", async () => {
     const outcomes = await Promise.all([
       executeAdjustment(

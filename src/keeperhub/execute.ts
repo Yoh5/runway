@@ -1,5 +1,6 @@
 import { idempotencyKey } from "./idempotency.js";
 import type { Address, Adjustment, Policy } from "../policy/types.js";
+import { reason, redact } from "../redact.js";
 
 /**
  * Result of a local dry run against our own RPC. KeeperHub's own `simulate`
@@ -24,6 +25,15 @@ export type ExecutorDeps = {
   fetch: typeof globalThis.fetch;
   baseUrl: string;
   apiKey: string;
+  /**
+   * The RPC endpoint URL `simulate` (a local viem client, built in cli.ts)
+   * reads against. Carried here purely for redaction: `simulate`'s own
+   * thrown errors can embed a hosted provider's key baked into the URL path,
+   * and that text flows into this module's outcomes (`stage: "simulate"`)
+   * exactly like any other failure reason. Optional so existing test doubles
+   * with no such secret keep compiling unchanged.
+   */
+  rpcUrl?: string;
   simulate: SimulateFn;
   /**
    * Total time budget, in milliseconds, for retrying a broadcast that
@@ -57,21 +67,6 @@ export type ExecutionOutcome =
 
 const RETRY_INTERVAL_MS = 500;
 
-function reason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * Strips the API key out of any text before it can reach an outcome. The key
- * is never logged, never included in an error message, and never written to
- * a run record — including when it leaks into a message we did not write
- * ourselves, such as a network client embedding the failed request's headers
- * in its own thrown error.
- */
-function redactKey(text: string, apiKey: string): string {
-  return apiKey.length > 0 ? text.split(apiKey).join("[redacted]") : text;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -97,6 +92,12 @@ export async function executeAdjustment(
     userData: "0x",
   };
 
+  // Every outcome detail below goes through this before it is returned: the
+  // KeeperHub API key and the RPC provider key `simulate` can embed in a
+  // thrown error must never survive into a failure reason, an escalation
+  // detail, or a serialised run record.
+  const safeText = (text: string) => redact(text, [deps.apiKey, deps.rpcUrl]);
+
   const simulation = await deps.simulate({
     token: policy.token,
     sender: policy.sender,
@@ -104,7 +105,7 @@ export async function executeAdjustment(
     flowRateWeiPerSec: adjustment.toRateWeiPerSec,
   });
   if (simulation.reverted) {
-    return { status: "refused", stage: "simulate", detail: redactKey(simulation.reason, deps.apiKey) };
+    return { status: "refused", stage: "simulate", detail: safeText(simulation.reason) };
   }
 
   const key = idempotencyKey(policy, adjustment, nowSec);
@@ -125,7 +126,7 @@ export async function executeAdjustment(
     } catch (error) {
       return {
         status: "unresolved",
-        detail: redactKey(`broadcast request failed: ${reason(error)}`, deps.apiKey),
+        detail: safeText(`broadcast request failed: ${reason(error)}`),
       };
     }
 
@@ -135,10 +136,7 @@ export async function executeAdjustment(
     } catch (error) {
       return {
         status: "unresolved",
-        detail: redactKey(
-          `broadcast response (http ${response.status}) was not valid JSON: ${reason(error)}`,
-          deps.apiKey,
-        ),
+        detail: safeText(`broadcast response (http ${response.status}) was not valid JSON: ${reason(error)}`),
       };
     }
     const data = isRecord(parsed) ? parsed : {};
@@ -160,9 +158,8 @@ export async function executeAdjustment(
       return {
         status: "refused",
         stage: "broadcast",
-        detail: redactKey(
+        detail: safeText(
           `idempotency key already resolved a different broadcast (original execution: ${original}); rotating the key here could double-send`,
-          deps.apiKey,
         ),
       };
     }
@@ -182,7 +179,7 @@ export async function executeAdjustment(
     if (data.success === false) {
       const parts = [typeof data.error === "string" ? data.error : "broadcast refused"];
       if (typeof data.rejection === "string") parts.push(data.rejection);
-      return { status: "refused", stage: "broadcast", detail: redactKey(parts.join(": "), deps.apiKey) };
+      return { status: "refused", stage: "broadcast", detail: safeText(parts.join(": ")) };
     }
 
     // A 4xx status (other than the two 409 codes already handled above) means
@@ -191,7 +188,7 @@ export async function executeAdjustment(
     // body does not carry a `success` field. That is a known refusal, not an
     // unknown outcome.
     if (response.status >= 400 && response.status < 500 && typeof data.error === "string") {
-      return { status: "refused", stage: "broadcast", detail: redactKey(data.error, deps.apiKey) };
+      return { status: "refused", stage: "broadcast", detail: safeText(data.error) };
     }
 
     return {

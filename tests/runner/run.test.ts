@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { runOnce } from "../../src/runner/run.js";
 import type { RunDeps } from "../../src/runner/run.js";
 import { toSerialisable } from "../../src/runner/record.js";
-import { ReadIncompleteError } from "../../src/chain/reader.js";
+import { readFacts, ReadIncompleteError } from "../../src/chain/reader.js";
+import type { PublicClientLike } from "../../src/chain/reader.js";
 import type { Address, Facts, Policy } from "../../src/policy/types.js";
 import type { ExecutionOutcome } from "../../src/keeperhub/execute.js";
 
@@ -163,6 +164,40 @@ describe("runOnce", () => {
     expect(Object.keys(record).sort()).toEqual(
       ["decision", "escalations", "facts", "nowSec", "outcomes", "startedAt"].sort(),
     );
+  });
+
+  it("never lets a hosted RPC provider's key reach the serialised run record (I4)", async () => {
+    // Exercises the real chain/reader.ts, not a stub: a hosted RPC provider
+    // (Alchemy, Infura, ...) embeds its key in the URL path itself, which
+    // survives into a thrown HttpRequestError's message untouched -- viem's
+    // own credential stripping only handles basic-auth. That message must
+    // never reach failures[].reason, the ReadIncompleteError message, the
+    // run-level escalation's detail, or the serialised run record.
+    const FAKE_PROVIDER_KEY = "sk-fake-alchemy-key-should-never-leak-9f3a";
+    const rpcUrl = `https://eth-sepolia.g.alchemy.com/v2/${FAKE_PROVIDER_KEY}`;
+    const client: PublicClientLike = {
+      readContract: async () => {
+        throw new Error(`HttpRequestError: fetch failed for ${rpcUrl} — 500 Internal Server Error`);
+      },
+    };
+
+    const record = await runOnce(
+      {
+        readFacts: (p, n) => readFacts({ client, rpcUrl }, p, n),
+        execute: async () => LANDED,
+        notify: async () => {},
+      },
+      policy(),
+      1_700_000_000,
+    );
+
+    expect(record.facts).toBeNull();
+    expect(record.escalations.map((e) => e.kind)).toContain("read-incomplete");
+    const serialised = JSON.stringify(toSerialisable(record));
+    expect(serialised).not.toContain(FAKE_PROVIDER_KEY);
+    // The escalation this run recorded must still describe the failure, just
+    // with the key stripped out -- not silently emptied.
+    expect(record.escalations[0]?.detail).toContain("[redacted]");
   });
 
   it("never lets a secret a collaborator closes over reach the run record", async () => {

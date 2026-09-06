@@ -1,6 +1,7 @@
 import { decide } from "../policy/decide.js";
 import type { Adjustment, Facts, Policy } from "../policy/types.js";
 import type { ExecutionOutcome } from "../keeperhub/execute.js";
+import { reason } from "../redact.js";
 import { deliverEscalation } from "./escalate.js";
 import type { RunRecord } from "./record.js";
 
@@ -14,10 +15,6 @@ export type RunDeps = {
   execute: (policy: Policy, adjustment: Adjustment, nowSec: number) => Promise<ExecutionOutcome>;
   notify: (webhook: string, payload: unknown) => Promise<void>;
 };
-
-function reason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * Runs one tick: read the chain, decide, act, escalate, and write down

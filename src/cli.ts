@@ -9,6 +9,7 @@ import { executeAdjustment, type ExecutorDeps, type SimulateFn } from "./keeperh
 import { decide } from "./policy/decide.js";
 import { loadPolicy } from "./policy/load.js";
 import type { Adjustment, Decision, Policy } from "./policy/types.js";
+import { reason, redact } from "./redact.js";
 import { renderReport } from "./report/render.js";
 import { fromSerialisable, toSerialisable } from "./runner/record.js";
 import type { RunRecord } from "./runner/record.js";
@@ -40,10 +41,6 @@ function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not set`);
   return value;
-}
-
-function reason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function printDecisionTable(
@@ -111,6 +108,10 @@ function buildReaderDeps(): ReaderDeps {
       readContract: (args) =>
         client.readContract(args as unknown as Parameters<typeof client.readContract>[0]),
     },
+    // Carried purely so a failed read can redact a hosted provider's key back
+    // out of the error text: it travels baked into the URL path, which
+    // survives into a thrown HttpRequestError's message untouched.
+    rpcUrl,
   };
 }
 
@@ -118,7 +119,8 @@ function buildExecutorDeps(): ExecutorDeps {
   const apiKey = requireEnv("KEEPERHUB_API_KEY");
   const baseUrl = requireEnv("KEEPERHUB_BASE_URL");
   const flowOperator = requireEnv("KEEPERHUB_FLOW_OPERATOR_ADDRESS");
-  const client = createPublicClient({ chain: sepolia, transport: http(requireEnv("SEPOLIA_RPC_URL")) });
+  const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
+  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
 
   const simulate: SimulateFn = async ({ token, sender, receiver, flowRateWeiPerSec }) => {
     try {
@@ -131,7 +133,11 @@ function buildExecutorDeps(): ExecutorDeps {
       });
       return { reverted: false };
     } catch (error) {
-      return { reverted: true, reason: reason(error) };
+      // Redacted here too, not only downstream in executeAdjustment: this is
+      // the closure that actually holds the RPC URL, and a viem
+      // HttpRequestError against a hosted provider embeds its key in the URL
+      // path itself, not as basic-auth, so nothing strips it upstream.
+      return { reverted: true, reason: redact(reason(error), [rpcUrl]) };
     }
   };
 
@@ -139,6 +145,7 @@ function buildExecutorDeps(): ExecutorDeps {
     fetch: globalThis.fetch,
     baseUrl,
     apiKey,
+    rpcUrl,
     simulate,
     pollBudgetMs: 30_000,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
