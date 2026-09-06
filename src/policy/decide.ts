@@ -112,13 +112,28 @@ export function decide(facts: Facts, policy: Policy): Decision {
     const reducible = rate > recipient.floorRateWeiPerSec ? rate - recipient.floorRateWeiPerSec : 0n;
     if (reducible === 0n) continue;
     const take = reducible < need ? reducible : need;
+    // `rate` is read straight from the chain and can exceed
+    // `committedRateWeiPerSec`: the treasury keeps its own keys and can raise
+    // a stream by hand at any time, and `committedRateWeiPerSec` is
+    // hand-edited policy YAML that can be lowered beneath a live rate.
+    // Invariant 2 (`toRate <= committedRate`) holds regardless, so a partial
+    // shed that would otherwise leave the stream above its committed rate is
+    // clamped down to it instead — never below, since every floor is already
+    // at or under its own committed rate.
+    const uncappedToRate = rate - take;
+    const toRateWeiPerSec =
+      uncappedToRate > recipient.committedRateWeiPerSec ? recipient.committedRateWeiPerSec : uncappedToRate;
     adjustments.push({
       receiver: recipient.address,
       fromRateWeiPerSec: rate,
-      toRateWeiPerSec: rate - take,
+      toRateWeiPerSec,
       reason: "budget-shed",
     });
-    need -= take;
+    // The actual reduction achieved can exceed the planned `take` when the
+    // clamp above bites; charge `need` for what really happened; not doing so
+    // would under-count how much budget the clamp already recovered and shed
+    // more than necessary from the next stream in line.
+    need -= rate - toRateWeiPerSec;
   }
 
   const escalation: Escalation | null =

@@ -72,11 +72,15 @@ const scenario = fc
           nowSec: 1_700_000_000,
           availableBalanceWei: balance,
           depositWei: 0n,
-          streams: committed.map((c, i) => ({
+          streams: committed.map((_c, i) => ({
             receiver: address(100 + i),
-            // Current rate is capped at committed: the chain cannot hold a
-            // stream the treasury never opened.
-            flowRateWeiPerSec: (current[i] ?? 0n) > c ? c : (current[i] ?? 0n),
+            // Not capped at committed: the treasury keeps its own keys and
+            // can raise a stream above what the policy commits to at any
+            // time, and committedRateWeiPerSec is hand-edited policy YAML
+            // that can be lowered beneath a live on-chain rate. The property
+            // suite must be able to reach that domain to exercise invariant
+            // 2's clamp.
+            flowRateWeiPerSec: current[i] ?? 0n,
           })),
           unlistedOutflowWeiPerSec: 0n,
         };

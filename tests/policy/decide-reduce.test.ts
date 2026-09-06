@@ -102,6 +102,35 @@ describe("decide — reduce", () => {
     expect(d.escalation).toBeNull();
   });
 
+  it("clamps a shed to the committed rate when the on-chain rate runs above it (I1)", () => {
+    // A single critical stream, committed 100, floor 0, but running at 1000
+    // wei/sec on chain (the treasury can raise a stream by hand at any time;
+    // committedRateWeiPerSec is hand-edited policy YAML and does not bind the
+    // chain). balance 30000, target 200s -> budget = 30000/200 = 150/sec.
+    // netOutflow = 1000, need = 1000 - 150 = 850. reducible (down to floor 0)
+    // is 1000, so an uncapped shed would leave toRate = 1000 - 850 = 150 --
+    // above the 100 committed rate, violating invariant 2. The clamp must
+    // bring it to exactly 100 instead.
+    const p = policy({
+      recipients: [
+        { address: CRIT, label: "crit", tier: "critical", committedRateWeiPerSec: 100n, floorRateWeiPerSec: 0n },
+      ],
+    });
+    const f: Facts = {
+      nowSec: 1_700_000_000,
+      availableBalanceWei: 30_000n,
+      depositWei: 0n,
+      streams: [{ receiver: CRIT, flowRateWeiPerSec: 1000n }],
+      unlistedOutflowWeiPerSec: 0n,
+    };
+    const d = decide(f, p);
+    expect(d.kind).toBe("reduce");
+    expect(d.adjustments).toHaveLength(1);
+    expect(d.adjustments[0]?.fromRateWeiPerSec).toBe(1000n);
+    expect(d.adjustments[0]?.toRateWeiPerSec).toBe(100n);
+    expect(d.escalation).toBeNull();
+  });
+
   it("emits nothing for a stream that is already where the shed would leave it", () => {
     // Discretionary already at 0, its floor. Outflow 200/sec on 15000 is a
     // 75s runway, under the minimum. budget = 15000/200 = 75/sec, so 125/sec
