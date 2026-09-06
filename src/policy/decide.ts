@@ -35,17 +35,67 @@ function shedOrder(facts: Facts, policy: Policy): { recipient: Recipient; rate: 
   });
 }
 
+/**
+ * The treasury has recovered enough to raise streams back toward what it
+ * committed to, or is merely oscillating around the target and should be
+ * left alone. `runwaySec` is `null` when the caller has no net outflow to
+ * report a runway for (every stream is currently at zero).
+ */
+function considerRestore(facts: Facts, policy: Policy, runwaySec: bigint | null): Decision {
+  const hold: Decision = {
+    kind: "hold",
+    runwaySec,
+    breach: false,
+    adjustments: [],
+    escalation: null,
+  };
+
+  const committedOutflow = policy.recipients.reduce(
+    (sum, r) => sum + r.committedRateWeiPerSec,
+    0n,
+  );
+  if (committedOutflow === 0n) return hold;
+
+  // The band is measured at committed rates, not at today's degraded rates:
+  // the question is whether the treasury can afford what it originally agreed
+  // to pay, not whether it can afford what it is currently paying.
+  const runwayAtCommitted = facts.availableBalanceWei / committedOutflow;
+  if (runwayAtCommitted < policy.targetRunwaySec + policy.hysteresisSec) return hold;
+
+  const currentRate = new Map(facts.streams.map((s) => [s.receiver, s.flowRateWeiPerSec]));
+  const restoreOrder = [...policy.recipients].sort((a, b) => {
+    const tierDelta = TIER_ORDER.indexOf(b.tier) - TIER_ORDER.indexOf(a.tier);
+    if (tierDelta !== 0) return tierDelta;
+    return a.address < b.address ? -1 : 1;
+  });
+
+  const adjustments: Adjustment[] = [];
+  for (const recipient of restoreOrder) {
+    const rate = currentRate.get(recipient.address) ?? 0n;
+    if (rate === recipient.committedRateWeiPerSec) continue;
+    adjustments.push({
+      receiver: recipient.address,
+      fromRateWeiPerSec: rate,
+      toRateWeiPerSec: recipient.committedRateWeiPerSec,
+      reason: "restore-to-committed",
+    });
+  }
+
+  if (adjustments.length === 0) return hold;
+  return { kind: "restore", runwaySec, breach: false, adjustments, escalation: null };
+}
+
 export function decide(facts: Facts, policy: Policy): Decision {
   const ordered = shedOrder(facts, policy);
   const netOutflow = ordered.reduce((sum, e) => sum + e.rate, 0n);
 
   if (netOutflow === 0n) {
-    return { kind: "hold", runwaySec: null, breach: false, adjustments: [], escalation: null };
+    return considerRestore(facts, policy, null);
   }
 
   const runwaySec = facts.availableBalanceWei / netOutflow;
   if (runwaySec >= policy.minRunwaySec) {
-    return { kind: "hold", runwaySec, breach: false, adjustments: [], escalation: null };
+    return considerRestore(facts, policy, runwaySec);
   }
 
   const budget = facts.availableBalanceWei / policy.targetRunwaySec;
