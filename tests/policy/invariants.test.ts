@@ -9,7 +9,6 @@ const rate = fc.bigInt({ min: 0n, max: 10n ** 12n });
 const scenario = fc
   .record({
     count: fc.integer({ min: 1, max: 8 }),
-    balance: fc.bigInt({ min: 0n, max: 10n ** 24n }),
     minHours: fc.integer({ min: 1, max: 200 }),
     extraHours: fc.integer({ min: 0, max: 500 }),
     hystHours: fc.integer({ min: 1, max: 100 }),
@@ -29,7 +28,29 @@ const scenario = fc
           maxLength: base.count,
         }),
       })
-      .map(({ committed, floorFraction, current, tiers }) => {
+      .chain((mid) => {
+        const targetRunwaySec = BigInt(base.minHours + base.extraHours) * 3600n;
+        const committedOutflow = mid.committed.reduce((sum, c) => sum + c, 0n);
+        // A flat 0..10^24 balance almost never lands near the budget: rates
+        // cap at 10^12 and runways at ~2.52M seconds, so any balance small
+        // enough to trigger a reduce is nearly always small enough to put the
+        // budget below the floor sum too, and escalation fires. Anchoring a
+        // second source of balance to 0-3x the committed outflow at the
+        // target runway puts a real fraction of draws in the band where
+        // budget and outflow are comparable — where a shed can actually land
+        // without exhausting every floor.
+        const anchoredBalance = fc
+          .integer({ min: 0, max: 300 })
+          .map((pct) => (committedOutflow * targetRunwaySec * BigInt(pct)) / 100n);
+        const wideBalance = fc.bigInt({ min: 0n, max: 10n ** 24n });
+        // Weighted 3:1 toward the anchored band: the wide range still covers
+        // the extremes, but most draws should land where budget and outflow
+        // are actually comparable.
+        return fc
+          .oneof({ arbitrary: wideBalance, weight: 1 }, { arbitrary: anchoredBalance, weight: 3 })
+          .map((balance) => ({ ...mid, balance }));
+      })
+      .map(({ committed, floorFraction, current, tiers, balance }) => {
         const policy: Policy = {
           version: 1,
           chainId: 11155111,
@@ -49,7 +70,7 @@ const scenario = fc
         };
         const facts: Facts = {
           nowSec: 1_700_000_000,
-          availableBalanceWei: base.balance,
+          availableBalanceWei: balance,
           depositWei: 0n,
           streams: committed.map((c, i) => ({
             receiver: address(100 + i),
@@ -87,16 +108,30 @@ describe("policy invariants", () => {
     );
   });
 
-  it("3: after a reduce, the RESULTING total outflow fits the budget or an escalation is present", () => {
+  it("3a: after a reduce with no escalation, the RESULTING total outflow fits the budget", () => {
     fc.assert(
       fc.property(scenario, ({ policy, facts }) => {
         const d = decide(facts, policy);
-        if (d.kind !== "reduce") return;
+        if (d.kind !== "reduce" || d.escalation !== null) return;
         const after = new Map(facts.streams.map((s) => [s.receiver, s.flowRateWeiPerSec]));
         for (const a of d.adjustments) after.set(a.receiver, a.toRateWeiPerSec);
         const total = [...after.values()].reduce((sum, r) => sum + r, 0n);
         const budget = facts.availableBalanceWei / policy.targetRunwaySec;
-        expect(total <= budget || d.escalation !== null).toBe(true);
+        expect(total <= budget).toBe(true);
+      }),
+    );
+  });
+
+  it("3b: after a reduce that escalates, every stream sits at or below its floor", () => {
+    fc.assert(
+      fc.property(scenario, ({ policy, facts }) => {
+        const d = decide(facts, policy);
+        if (d.kind !== "reduce" || d.escalation === null) return;
+        const after = new Map(facts.streams.map((s) => [s.receiver, s.flowRateWeiPerSec]));
+        for (const a of d.adjustments) after.set(a.receiver, a.toRateWeiPerSec);
+        for (const r of policy.recipients) {
+          expect((after.get(r.address) ?? 0n) <= r.floorRateWeiPerSec).toBe(true);
+        }
       }),
     );
   });
