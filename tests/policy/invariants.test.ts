@@ -119,6 +119,7 @@ describe("policy invariants", () => {
         const budget = facts.availableBalanceWei / policy.targetRunwaySec;
         expect(total <= budget).toBe(true);
       }),
+      { numRuns: 2000 },
     );
   });
 
