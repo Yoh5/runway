@@ -75,3 +75,79 @@ describe("decide — unlisted outflow", () => {
     expect(decide(f, policy()).runwaySec).toBeNull();
   });
 });
+
+describe("decide — restore weighs unlisted outflow", () => {
+  it("holds back a restore that committed-only rates would have cleared", () => {
+    // Current rates sit at their floors (80/50/0 = 130/sec listed), so the
+    // top-level runway check passes easily: netOutflow = 130 + 100 = 230,
+    // runway = 90000/230 = 391s, well above the 100s minimum.
+    //
+    // Committed outflow is 300/sec (100 each). Committed-only runway would be
+    // 90000/300 = 300s, clearing the 250s band (target 200 + hysteresis 50)
+    // and restoring. But total committed drain, unlisted included, is
+    // 300 + 100 = 400/sec: 90000/400 = 225s, which does NOT clear 250s. The
+    // fix must hold here.
+    const f = { ...facts(90_000n, [80n, 50n, 0n]), unlistedOutflowWeiPerSec: 100n };
+    const d = decide(f, policy());
+    expect(d.kind).toBe("hold");
+    expect(d.adjustments).toEqual([]);
+  });
+
+  it("still restores when the unlisted drain is small enough to clear the band", () => {
+    // Same shape as above, but unlisted outflow is only 50/sec. Committed
+    // total = 300 + 50 = 350/sec: 90000/350 = 257s (350*257=89950), which
+    // clears the 250s band, so restoration proceeds.
+    const f = { ...facts(90_000n, [80n, 50n, 0n]), unlistedOutflowWeiPerSec: 50n };
+    const d = decide(f, policy());
+    expect(d.kind).toBe("restore");
+    expect(d.adjustments).toHaveLength(3);
+    for (const a of d.adjustments) {
+      expect(a.toRateWeiPerSec).toBe(100n);
+      expect(a.reason).toBe("restore-to-committed");
+    }
+    expect(d.adjustments.map((a) => a.receiver)).toEqual([CRIT, STD, DISC]);
+  });
+
+  it("evaluates on the merits, not the old zero-committed-outflow guard", () => {
+    // All committed rates are 0, so committedOutflow (listed only) is 0 — the
+    // old guard would return hold immediately regardless of anything else.
+    // But unlisted outflow is 100/sec, so committed total is 100/sec, a
+    // non-zero divisor the fixed guard must not skip.
+    //
+    // Current rates (50/30/20 = 100/sec listed) plus 100 unlisted = 200/sec
+    // net outflow: runway = 25000/200 = 125s, above the 100s minimum, so the
+    // top-level check reaches considerRestore.
+    //
+    // Committed total = 0 + 100 = 100/sec: 25000/100 = 250s, which exactly
+    // clears the 250s band (target 200 + hysteresis 50), so restoration
+    // proceeds — every stream is set down to its committed rate of 0.
+    const zeroCommittedPolicy = policy({
+      recipients: [
+        { address: CRIT, label: "crit", tier: "critical", committedRateWeiPerSec: 0n, floorRateWeiPerSec: 0n },
+        { address: STD, label: "std", tier: "standard", committedRateWeiPerSec: 0n, floorRateWeiPerSec: 0n },
+        { address: DISC, label: "disc", tier: "discretionary", committedRateWeiPerSec: 0n, floorRateWeiPerSec: 0n },
+      ],
+    });
+    const f = { ...facts(25_000n, [50n, 30n, 20n]), unlistedOutflowWeiPerSec: 100n };
+    const d = decide(f, zeroCommittedPolicy);
+    expect(d.kind).toBe("restore");
+    expect(d.adjustments).toHaveLength(3);
+    for (const a of d.adjustments) {
+      expect(a.toRateWeiPerSec).toBe(0n);
+    }
+  });
+
+  it("is unchanged from before when unlisted outflow is zero", () => {
+    // Pins the pre-existing behaviour from decide-restore.test.ts: committed
+    // outflow 300/sec, committed total unchanged at 300/sec since unlisted is
+    // 0. 75000/300 = 250s clears the band, restoring the one lagging stream.
+    const f = { ...facts(75_000n, [100n, 100n, 0n]), unlistedOutflowWeiPerSec: 0n };
+    const d = decide(f, policy());
+    expect(d.kind).toBe("restore");
+    expect(d.breach).toBe(false);
+    expect(d.adjustments).toHaveLength(1);
+    expect(d.adjustments[0]?.receiver).toBe(DISC);
+    expect(d.adjustments[0]?.toRateWeiPerSec).toBe(100n);
+    expect(d.adjustments[0]?.reason).toBe("restore-to-committed");
+  });
+});

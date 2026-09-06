@@ -54,12 +54,16 @@ function considerRestore(facts: Facts, policy: Policy, runwaySec: bigint | null)
     (sum, r) => sum + r.committedRateWeiPerSec,
     0n,
   );
-  if (committedOutflow === 0n) return hold;
 
   // The band is measured at committed rates, not at today's degraded rates:
   // the question is whether the treasury can afford what it originally agreed
-  // to pay, not whether it can afford what it is currently paying.
-  const runwayAtCommitted = facts.availableBalanceWei / committedOutflow;
+  // to pay, not whether it can afford what it is currently paying. Unlisted
+  // outflow is real drain Runway has no mandate over and never adjusts, but
+  // it still has to be counted, or restoring can raise listed streams back up
+  // while the true (listed + unlisted) runway stays short.
+  const committedTotal = committedOutflow + facts.unlistedOutflowWeiPerSec;
+  if (committedTotal === 0n) return hold;
+  const runwayAtCommitted = facts.availableBalanceWei / committedTotal;
   if (runwayAtCommitted < policy.targetRunwaySec + policy.hysteresisSec) return hold;
 
   const currentRate = new Map(facts.streams.map((s) => [s.receiver, s.flowRateWeiPerSec]));
