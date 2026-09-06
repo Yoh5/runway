@@ -1451,8 +1451,12 @@ git commit -m "feat(policy): count outflow the policy does not list against the 
 - Produces:
   - `idempotencyKey(policy: Policy, adjustment: Adjustment, nowSec: number): string`
   - `executeAdjustment(deps: ExecutorDeps, policy: Policy, adjustment: Adjustment, nowSec: number): Promise<ExecutionOutcome>`
-  - `type ExecutorDeps = { fetch: typeof globalThis.fetch; baseUrl: string; apiKey: string; pollBudgetMs: number; sleep: (ms: number) => Promise<void> }`
-  - `type ExecutionOutcome = { status: "landed"; executionId: string; transactionHash: string; transactionLink: string; gasUsedWei: string } | { status: "refused"; stage: "simulate" | "broadcast"; detail: string } | { status: "unresolved"; executionId: string; detail: string }`
+  - `type ExecutorDeps = { fetch: typeof globalThis.fetch; baseUrl: string; apiKey: string; simulate: (adjustment: Adjustment, policy: Policy) => Promise<void>; sleep: (ms: number) => Promise<void> }`
+  - `type ExecutionOutcome = { status: "landed"; transactionHash: string; transactionLink: string; gasUsedWei: string; sponsored: boolean } | { status: "refused"; stage: "simulate" | "broadcast"; detail: string } | { status: "unresolved"; detail: string }`
+
+No outcome carries an `executionId`, because the protocol-write response body has none.
+`simulate` is injected rather than called directly so the tests can drive the gate without
+an RPC; it rejects when the call would revert, and a rejection means no POST is sent.
 
 `sleep` is injected so the polling tests run instantly instead of waiting on a real
 timer; production passes a real one.
@@ -1541,6 +1545,15 @@ Expected: PASS, 4 tests.
 Use a stub `fetch` injected through `ExecutorDeps`, never a real network call. Build a
 fresh stub per test — a shared mutable stub makes a failure in one test look like a bug
 in another.
+
+> **Superseded, kept for the record.** The test code in this step was written against
+> KeeperHub's published `/transfer` flow: a `202` carrying an `executionId`, then polling
+> `/api/execute/{id}/status` for a verified receipt, with `"simulate": true` sent to the
+> API. None of that applies to the protocol-action route, as the Global Constraints above
+> now record. The shipped tests in `tests/keeperhub/execute.test.ts` follow the corrected
+> contract: local simulation through `deps.simulate`, no `simulate` field in any request
+> body, and a terminal response with no polling. Read them rather than the block below,
+> which is left here only so the correction is legible.
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -1781,7 +1794,7 @@ import { describe, expect, it } from "vitest";
 import { runOnce } from "../../src/runner/run.js";
 import { ReadIncompleteError } from "../../src/chain/reader.js";
 
-const LANDED = { status: "landed", executionId: "e1", transactionHash: "0xabc",
+const LANDED = { status: "landed", transactionHash: "0xabc",
   transactionLink: "https://sepolia.etherscan.io/tx/0xabc", gasUsedWei: "1" } as const;
 const REFUSED = { status: "refused", stage: "broadcast", detail: "CFA: ACL denied" } as const;
 
@@ -1934,7 +1947,7 @@ function record(over: Partial<RunRecord> = {}): RunRecord {
       {
         adjustment: adjustment(),
         outcome: {
-          status: "landed", executionId: "e1", transactionHash: "0xabc",
+          status: "landed", transactionHash: "0xabc",
           transactionLink: "https://sepolia.etherscan.io/tx/0xabc", gasUsedWei: "1",
         },
       },
