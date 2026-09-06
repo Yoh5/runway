@@ -27,6 +27,11 @@ const scenario = fc
           minLength: base.count,
           maxLength: base.count,
         }),
+        // Drawn, not hardcoded to 0: unlisted outflow is the largest
+        // behavioural change on this branch (added to both the reduce and
+        // restore paths), and a property suite that never varies it never
+        // actually exercises that code.
+        unlisted: rate,
       })
       .chain((mid) => {
         const targetRunwaySec = BigInt(base.minHours + base.extraHours) * 3600n;
@@ -50,7 +55,7 @@ const scenario = fc
           .oneof({ arbitrary: wideBalance, weight: 1 }, { arbitrary: anchoredBalance, weight: 3 })
           .map((balance) => ({ ...mid, balance }));
       })
-      .map(({ committed, floorFraction, current, tiers, balance }) => {
+      .map(({ committed, floorFraction, current, tiers, unlisted, balance }) => {
         const policy: Policy = {
           version: 1,
           chainId: 11155111,
@@ -82,7 +87,7 @@ const scenario = fc
             // 2's clamp.
             flowRateWeiPerSec: current[i] ?? 0n,
           })),
-          unlistedOutflowWeiPerSec: 0n,
+          unlistedOutflowWeiPerSec: unlisted,
         };
         return { policy, facts };
       }),
@@ -120,7 +125,12 @@ describe("policy invariants", () => {
         if (d.kind !== "reduce" || d.escalation !== null) return;
         const after = new Map(facts.streams.map((s) => [s.receiver, s.flowRateWeiPerSec]));
         for (const a of d.adjustments) after.set(a.receiver, a.toRateWeiPerSec);
-        const total = [...after.values()].reduce((sum, r) => sum + r, 0n);
+        const listedTotal = [...after.values()].reduce((sum, r) => sum + r, 0n);
+        // The quantity the spec constrains is the resulting TOTAL outflow --
+        // listed plus unlisted -- not merely the listed streams' sum. Runway
+        // has no mandate over unlisted drain and never adjusts it, but it
+        // still counts against the budget the shed is trying to fit inside.
+        const total = listedTotal + facts.unlistedOutflowWeiPerSec;
         const budget = facts.availableBalanceWei / policy.targetRunwaySec;
         expect(total <= budget).toBe(true);
       }),
