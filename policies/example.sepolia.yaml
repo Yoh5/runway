@@ -1,0 +1,31 @@
+# Example runway policy for Ethereum Sepolia.
+#
+# The `token`, `sender`, and every `recipients[].address` below are placeholder
+# addresses (0x...0001, 0x...0002, ...). They are filled in with real addresses
+# by the Task 9 setup script; do not point this file at production accounts.
+
+version: 1
+chainId: 11155111
+token: "0x0000000000000000000000000000000000000001"
+sender: "0x0000000000000000000000000000000000000002"
+minRunwayHours: 72
+targetRunwayHours: 168
+hysteresisHours: 24
+recipients:
+  - address: "0x0000000000000000000000000000000000000003"
+    label: "Lead engineer"
+    tier: critical
+    committedRateWeiPerSec: "1000000000000"
+    floorRateWeiPerSec: "600000000000"
+  - address: "0x0000000000000000000000000000000000000004"
+    label: "Contractor"
+    tier: standard
+    committedRateWeiPerSec: "500000000000"
+    floorRateWeiPerSec: "0"
+  - address: "0x0000000000000000000000000000000000000005"
+    label: "Discretionary grant"
+    tier: discretionary
+    committedRateWeiPerSec: "100000000000"
+    floorRateWeiPerSec: "0"
+escalation:
+  webhook: "https://example.invalid/hook"

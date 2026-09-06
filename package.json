@@ -1,0 +1,29 @@
+{
+  "name": "runway",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "biome check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.34.5",
+  "dependencies": {
+    "js-yaml": "^5.4.1",
+    "viem": "^2.56.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.12",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^26.4.1",
+    "fast-check": "^4.9.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}
