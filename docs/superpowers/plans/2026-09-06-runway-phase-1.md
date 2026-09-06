@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Node 22, pnpm, TypeScript strict mode. `"type": "module"`.
-- All rates, balances and durations are `bigint`. Never `number`, never float. The only `number` in a domain type is `Facts.nowSec`.
+- Every **quantity** — rate, balance, duration — is `bigint`. Never `number`, never float, because a wei value past 2^53 silently loses precision as a double. **Identifiers and counters are not quantities** and stay `number`: `Policy.version`, `Policy.chainId` and `Facts.nowSec` are the only numbers in a domain type. (An earlier wording of this constraint named `Facts.nowSec` alone, which read as forbidding `chainId: number` while the specified type in Task 1 required it. The rule is about precision, not about the word `number`.)
 - `policy` imports nothing from `reader`, `executor` or `runner`, and performs no I/O.
 - Reduction tier order is fixed: `discretionary`, then `standard`, then `critical`. Restoration is the reverse.
 - Permissions bitmap on the mandate is **6** (`update | delete`), never 7.
@@ -1864,20 +1864,37 @@ If it is absent, stop and enable it in the KeeperHub UI before continuing.
 
 - [ ] **Step 3: Resolve the Sepolia addresses from the chain**
 
-`scripts/resolve-sepolia.ts` resolves and prints, without any hardcoded token address:
-the SuperToken address for the chosen test token, its underlying ERC-20 via
-`getUnderlyingToken()`, and the CFA minimum deposit that governance has set for it. Each
-value is asserted, not assumed — a zero address or a failed call stops the script.
+**The token is ETHx**, Superfluid's native-asset super token for Sepolia, at
+`0x30a6933Ca9230361972E413a15dC8114c952414e`. This was read from Superfluid's own network
+registry (`superfluid-finance/protocol-monorepo`, `packages/metadata/networks.json`, the
+`eth-sepolia` entry) on 2026-09-06, together with `cfaV1Forwarder`
+`0xcfA132E353cB4E398080B9700609bb008eceB125` — which matches KeeperHub's constant exactly.
+
+Do not look for fDAIx. No testnet entry in that registry carries a `testTokens` array, so
+there is no Superfluid test-token faucet to draw on. ETHx is better anyway: its underlying
+is Sepolia ETH, which many public faucets hand out, so the funding path has no single
+point of failure.
+
+`scripts/resolve-sepolia.ts` verifies rather than assumes. It reads and prints: the ETHx
+address responds to `getUnderlyingToken()`, the CFA minimum deposit governance has set for
+it, and the CFAv1Forwarder's `getFlowInfo` for a zero-flow pair (proving the contract is
+live and the ABI matches). A zero address, a revert, or a failed call stops the script.
 
 Write the resolved values into `policies/treasury.sepolia.yaml`, and record in
 `docs/SETUP.md` the date they were read and the block number.
 
 - [ ] **Step 4: Fund the treasury and open three streams**
 
-Human steps, documented in `docs/SETUP.md`: obtain the underlying test token from the
-Superfluid faucet, `wrap` it into the SuperToken, then open three streams — one per
-tier — sized so that the treasury's runway starts comfortably above
-`targetRunwayHours + hysteresisHours`.
+Human steps, documented in `docs/SETUP.md`: obtain Sepolia ETH from a public faucet, wrap
+it into ETHx, then open three streams — one per tier — sized so that the treasury's runway
+starts comfortably above `targetRunwayHours + hysteresisHours`.
+
+**Wrapping ETHx does not go through KeeperHub.** ETHx is a native-asset super token: it is
+wrapped with the payable `upgradeByETH()`, not the `upgrade(uint256)` that KeeperHub's
+`wrap` action calls, because there is no underlying ERC-20 to pull. Wrap from the treasury
+wallet directly — through the Superfluid dashboard or a direct call. This costs the
+project nothing: wrapping is setup, and only the keeper's `update-flow` writes need to run
+through KeeperHub.
 
 The wrapped amount must exceed three times the CFA minimum deposit read in step 3.
 Each `create-flow` locks that deposit whatever the rate, so an amount sized only from the
@@ -1920,9 +1937,9 @@ git commit -m "chore(sepolia): setup scripts, resolved addresses and the granted
 
 - [ ] **Step 1: Tighten the budget until the policy must act**
 
-Unwrap part of the SuperToken balance so the runway falls below `minRunwayHours`. This is
-the honest way to produce the breach: the treasury really does have less money, rather
-than the threshold being moved to manufacture an alarm.
+Unwrap part of the ETHx balance — `downgradeToETH` — so the runway falls below
+`minRunwayHours`. This is the honest way to produce the breach: the treasury really does
+have less money, rather than the threshold being moved to manufacture an alarm.
 
 - [ ] **Step 2: Dry run and read the decision**
 
