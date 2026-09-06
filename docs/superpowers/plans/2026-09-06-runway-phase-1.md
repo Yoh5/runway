@@ -1264,6 +1264,179 @@ git commit -m "feat(chain): fail-closed reader for balance, deposit and per-stre
 
 ---
 
+### Task 5b: Account for outflow the policy does not list
+
+**Files:**
+- Modify: `src/policy/types.ts` (add one field to `Facts`)
+- Modify: `src/policy/decide.ts` (one line in the runway calculation)
+- Modify: `src/chain/reader.ts`, `src/chain/abi.ts`
+- Modify: `tests/policy/decide-reduce.test.ts`, `tests/policy/decide-restore.test.ts`, `tests/policy/invariants.test.ts`, `tests/chain/reader.test.ts` (helper defaults only)
+- Test: `tests/policy/decide-unlisted.test.ts`, and new cases in `tests/chain/reader.test.ts`
+
+**Interfaces:**
+- Consumes: everything from Tasks 1 through 5.
+- Produces: `Facts.unlistedOutflowWeiPerSec: bigint`.
+
+**Why this task exists.** `readFacts` builds its stream list by walking `policy.recipients`,
+so a stream to an address the policy does not list is invisible to it. That money still
+leaves the account every second. The runway would be computed as if it were not, and the
+keeper would believe it has more time than it has — the one direction in which this
+number must never err.
+
+The fix is a single extra read. The CFAv1Forwarder exposes
+`getAccountFlowrate(token, account)`, which returns the account's **whole** net flow rate,
+listed streams and unlisted alike. The difference between that and the sum of the listed
+streams is exactly the outflow the policy does not know about. KeeperHub exposes the same
+read as `get-cfa-net-flow`, so this is a protocol-native check rather than an invention.
+
+Runway still only ever adjusts streams the policy names — it has no mandate over the
+others and must not pretend to. But it counts their drain when it decides how long the
+money lasts, and when the unlisted drain alone exceeds the budget, the existing
+`floors-exceed-budget` escalation fires on its own.
+
+- [ ] **Step 1: Add the field, defaulting every existing fixture to zero**
+
+Add to `Facts` in `src/policy/types.ts`:
+
+```ts
+  /**
+   * Net outflow, in wei per second, to receivers the policy does not list.
+   * Runway cannot adjust these streams -- it has no mandate over them -- but
+   * their drain is real and counts against how long the money lasts.
+   */
+  unlistedOutflowWeiPerSec: bigint;
+```
+
+Then set `unlistedOutflowWeiPerSec: 0n` in the `facts()` helper of every existing test
+file and in the Task 4 generator. Zero reproduces today's behaviour exactly, so every
+expectation written in Tasks 2, 3 and 4 must still pass untouched. If any of them changes,
+stop and report it — that would mean this field is doing something it should not.
+
+- [ ] **Step 2: Run the existing suite and confirm it is still green**
+
+Run: `pnpm test`
+Expected: PASS, with the same counts as before this task. This is the regression gate for
+the whole change; run it before writing a line of new logic.
+
+- [ ] **Step 3: Write the failing tests for the new behaviour**
+
+`tests/policy/decide-unlisted.test.ts`:
+
+```ts
+describe("decide — unlisted outflow", () => {
+  it("counts unlisted outflow against the runway", () => {
+    // Listed 200/sec plus 100/sec unlisted is 300/sec against 15000: a 50s
+    // runway, not the 75s the listed streams alone would suggest.
+    const f = { ...facts(15_000n, [100n, 100n, 0n]), unlistedOutflowWeiPerSec: 100n };
+    expect(decide(f, policy()).runwaySec).toBe(50n);
+  });
+
+  it("breaches on unlisted outflow alone", () => {
+    // Nothing listed is flowing, but 300/sec is leaving anyway.
+    const f = { ...facts(15_000n, [0n, 0n, 0n]), unlistedOutflowWeiPerSec: 300n };
+    const d = decide(f, policy());
+    expect(d.kind).toBe("reduce");
+    expect(d.breach).toBe(true);
+  });
+
+  it("never emits an adjustment for an unlisted receiver", () => {
+    const f = { ...facts(15_000n, [100n, 100n, 0n]), unlistedOutflowWeiPerSec: 100n };
+    const known = new Set(policy().recipients.map((r) => r.address));
+    for (const a of decide(f, policy()).adjustments) {
+      expect(known.has(a.receiver)).toBe(true);
+    }
+  });
+
+  it("escalates when the unlisted drain alone exceeds the budget", () => {
+    // budget = 15000/200 = 75/sec, all of which the unlisted 300/sec consumes.
+    // Every listed stream can go to its floor and it still will not be enough.
+    const f = { ...facts(15_000n, [100n, 100n, 100n]), unlistedOutflowWeiPerSec: 300n };
+    expect(decide(f, policy()).escalation?.kind).toBe("floors-exceed-budget");
+  });
+
+  it("still reports a null runway when nothing at all is flowing", () => {
+    const f = { ...facts(15_000n, [0n, 0n, 0n]), unlistedOutflowWeiPerSec: 0n };
+    expect(decide(f, policy()).runwaySec).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 4: Run them and watch them fail**
+
+Run: `pnpm test tests/policy/decide-unlisted.test.ts`
+Expected: FAIL — the runway ignores the new field, so the first case reports 75n.
+
+- [ ] **Step 5: Change the one line in `decide`**
+
+`netOutflow` becomes the total drain rather than the shed-able drain:
+
+```ts
+const listedOutflow = ordered.reduce((sum, e) => sum + e.rate, 0n);
+const netOutflow = listedOutflow + facts.unlistedOutflowWeiPerSec;
+```
+
+`netOutflow` continues to drive `runwaySec` and `need`. The shed loop keeps walking
+`ordered`, which holds only listed streams, so Runway still adjusts nothing it lacks a
+mandate for. The zero-outflow early return now tests the total, so an account with only
+unlisted streams is correctly seen as draining.
+
+- [ ] **Step 6: Add the reader's second read**
+
+Add `getAccountFlowrate` to `CFA_FORWARDER_READ_ABI` in `src/chain/abi.ts`:
+
+```ts
+  {
+    type: "function",
+    name: "getAccountFlowrate",
+    stateMutability: "view",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [{ name: "", type: "int96" }],
+  },
+```
+
+This fragment was called against the live CFAv1Forwarder on Sepolia at block 11646961 and
+returned a single `int96` without reverting.
+
+In `readFacts`, read the account flow rate alongside the per-stream reads, under the same
+fail-closed rule — a failure here joins `failures` and no decision is taken. Then:
+
+```ts
+// getAccountFlowrate is negative for a net sender. Listed streams are the
+// ones the policy named; whatever drains beyond them is unlisted.
+const totalOutflow = accountFlowrate < 0n ? -accountFlowrate : 0n;
+const listedOutflow = streams.reduce((sum, s) => sum + s.flowRateWeiPerSec, 0n);
+const unlistedOutflowWeiPerSec =
+  totalOutflow > listedOutflow ? totalOutflow - listedOutflow : 0n;
+```
+
+The clamp matters: an account that receives more than it sends has a positive net rate,
+and a treasury whose listed streams exceed the measured total (possible for one block
+around an update) must not produce a negative field.
+
+- [ ] **Step 7: Add the reader tests**
+
+Cover: a net receiver (positive rate) yields `0n`; an account draining more than its listed
+streams yields the difference; listed exceeding total yields `0n` rather than a negative;
+and a failing `getAccountFlowrate` read fails the whole call closed, exactly as a failing
+`getFlowInfo` does.
+
+- [ ] **Step 8: Run everything**
+
+Run: `pnpm test && pnpm typecheck && pnpm check`
+Expected: PASS, all previous tests unchanged plus the new ones.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src tests
+git commit -m "feat(policy): count outflow the policy does not list against the runway"
+```
+
+---
+
 ### Task 6: The KeeperHub executor
 
 **Files:**
@@ -1896,9 +2069,20 @@ wallet directly — through the Superfluid dashboard or a direct call. This cost
 project nothing: wrapping is setup, and only the keeper's `update-flow` writes need to run
 through KeeperHub.
 
-The wrapped amount must exceed three times the CFA minimum deposit read in step 3.
-Each `create-flow` locks that deposit whatever the rate, so an amount sized only from the
-flow rates reverts with `CFA_INSUFFICIENT_BALANCE`.
+**Sizing, from numbers measured on Sepolia at block 11646961, not from mainnet lore.**
+Superfluid's governance on Sepolia (`0x9539B21cC67844417E80aE168bc28c831E7Ed271`) reports
+`superTokenMinimumDeposit = 0` for ETHx — there is no governance floor here, unlike the
+69 DAI that mainnet DAIx locks. What binds instead is the liquidation period, read from
+the same governance as `PPPConfiguration`: **3600 seconds**, with a patrician period of
+720 seconds.
+
+So each stream locks `flowRate x 3600` as its buffer. Three streams need
+`3600 x (sum of the three committed rates)` wrapped purely as buffer, on top of whatever
+they will actually pay out over the demo. Size the wrap from that, or `create-flow`
+reverts with `CFA_INSUFFICIENT_BALANCE`.
+
+Note this number in `docs/SETUP.md`, because it is also the project's headline: the
+protocol's own safety margin is one hour, and Runway's default warning threshold is 72.
 
 - [ ] **Step 5: Grant the mandate**
 
