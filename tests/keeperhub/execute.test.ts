@@ -158,6 +158,24 @@ describe("executeAdjustment", () => {
     });
   });
 
+  it("never reports landed when success is true but transactionHash is missing or non-string", async () => {
+    const missingHash = await executeAdjustment(
+      baseDeps({ fetch: stub([], [[200, { success: true }]]) }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(missingHash.status).toBe("unresolved");
+
+    const numericHash = await executeAdjustment(
+      baseDeps({ fetch: stub([], [[200, { success: true, transactionHash: 12345 }]]) }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(numericHash.status).toBe("unresolved");
+  });
+
   it("refuses on success: false, folding error and rejection into the detail", async () => {
     const outcome = await executeAdjustment(
       baseDeps({
@@ -228,6 +246,28 @@ describe("executeAdjustment", () => {
     expect(outcome.status).toBe("refused");
     if (outcome.status === "refused") expect(outcome.stage).toBe("broadcast");
     expect(calls).toHaveLength(1);
+  });
+
+  it("never puts the API key in an idempotency_conflict outcome, even when the server echoes it in originalExecutionId", async () => {
+    const outcome = await executeAdjustment(
+      baseDeps({
+        fetch: stub([], [
+          [
+            409,
+            {
+              code: "idempotency_conflict",
+              retryable: false,
+              originalExecutionId: "direct_0 kh_test leaked-by-server",
+            },
+          ],
+        ]),
+      }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(outcome.status).toBe("refused");
+    expect(JSON.stringify(outcome)).not.toContain("kh_test");
   });
 
   it("reports unresolved when the broadcast request itself throws", async () => {

@@ -160,7 +160,10 @@ export async function executeAdjustment(
       return {
         status: "refused",
         stage: "broadcast",
-        detail: `idempotency key already resolved a different broadcast (original execution: ${original}); rotating the key here could double-send`,
+        detail: redactKey(
+          `idempotency key already resolved a different broadcast (original execution: ${original}); rotating the key here could double-send`,
+          deps.apiKey,
+        ),
       };
     }
 
