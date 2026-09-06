@@ -1,0 +1,25 @@
+{
+  "_comment": "Live reads recorded by the controller against Ethereum Sepolia at block 11646961 (2026-09-06), confirming the ABI fragments in src/chain/abi.ts are known-good before any test relied on a fake client.",
+  "chainId": 11155111,
+  "blockNumber": 11646961,
+  "reads": [
+    {
+      "contract": "CFA_FORWARDER_ADDRESS",
+      "address": "0xcfA132E353cB4E398080B9700609bb008eceB125",
+      "check": "bytecode present",
+      "result": "non-empty"
+    },
+    {
+      "contract": "CFAv1Forwarder",
+      "function": "getFlowInfo(token, sender, receiver)",
+      "result": ["0", "0", "0", "0"],
+      "reverted": false
+    },
+    {
+      "contract": "ETHx SuperToken",
+      "function": "realtimeBalanceOf(account, timestamp)",
+      "result": ["0", "0", "0"],
+      "reverted": false
+    }
+  ]
+}
