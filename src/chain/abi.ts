@@ -37,6 +37,16 @@ export const CFA_FORWARDER_READ_ABI = [
       { name: "owedDeposit", type: "uint256" },
     ],
   },
+  {
+    type: "function",
+    name: "getAccountFlowrate",
+    stateMutability: "view",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [{ name: "", type: "int96" }],
+  },
 ] as const;
 
 /** Superfluid pins both forwarders to one address on every chain it supports. */

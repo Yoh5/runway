@@ -57,6 +57,18 @@ export async function readFacts(
       return null;
     });
 
+  const accountFlowrateResult = await deps.client
+    .readContract({
+      address: CFA_FORWARDER_ADDRESS,
+      abi: CFA_FORWARDER_READ_ABI,
+      functionName: "getAccountFlowrate",
+      args: [policy.token, policy.sender],
+    })
+    .catch((error: unknown) => {
+      failures.push({ what: "getAccountFlowrate", reason: reason(error) });
+      return null;
+    });
+
   const streams: Stream[] = [];
   // Sequential rather than Promise.all: eight recipients is the realistic
   // upper bound here, and a serial loop keeps well inside any public RPC's
@@ -82,6 +94,19 @@ export async function readFacts(
   if (failures.length > 0) throw new ReadIncompleteError(failures);
 
   const [available, deposit] = balanceResult as readonly [bigint, bigint, bigint];
+  const accountFlowrate = accountFlowrateResult as bigint;
+
+  // getAccountFlowrate is negative for a net sender. Listed streams are the
+  // ones the policy named; whatever drains beyond them is unlisted.
+  const totalOutflow = accountFlowrate < 0n ? -accountFlowrate : 0n;
+  const listedOutflow = streams.reduce((sum, s) => sum + s.flowRateWeiPerSec, 0n);
+  // The clamp matters: an account that receives more than it sends has a
+  // positive net rate, and a treasury whose listed streams exceed the
+  // measured total (possible for one block around an update) must not
+  // produce a negative field.
+  const unlistedOutflowWeiPerSec =
+    totalOutflow > listedOutflow ? totalOutflow - listedOutflow : 0n;
+
   return {
     nowSec,
     // A negative available balance means the account is already insolvent.
@@ -90,5 +115,6 @@ export async function readFacts(
     availableBalanceWei: available < 0n ? 0n : available,
     depositWei: deposit,
     streams,
+    unlistedOutflowWeiPerSec,
   };
 }

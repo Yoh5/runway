@@ -41,6 +41,7 @@ function facts(balance: bigint, rates: [bigint, bigint, bigint]): Facts {
       { receiver: STD, flowRateWeiPerSec: rates[1] },
       { receiver: DISC, flowRateWeiPerSec: rates[2] },
     ],
+    unlistedOutflowWeiPerSec: 0n,
   };
 }
 

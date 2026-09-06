@@ -78,6 +78,7 @@ const scenario = fc
             // stream the treasury never opened.
             flowRateWeiPerSec: (current[i] ?? 0n) > c ? c : (current[i] ?? 0n),
           })),
+          unlistedOutflowWeiPerSec: 0n,
         };
         return { policy, facts };
       }),

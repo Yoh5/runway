@@ -24,7 +24,9 @@ function client(responses: Record<string, unknown>) {
     readContract: async (args: { functionName: string; args: readonly unknown[] }) => {
       const key = args.functionName === "realtimeBalanceOf"
         ? "balance"
-        : `flow:${String(args.args[2]).toLowerCase()}`;
+        : args.functionName === "getAccountFlowrate"
+          ? "accountFlowrate"
+          : `flow:${String(args.args[2]).toLowerCase()}`;
       const value = responses[key];
       if (value instanceof Error) throw value;
       if (value === undefined) throw new Error(`unexpected read: ${key}`);
@@ -38,6 +40,7 @@ describe("readFacts", () => {
     const facts = await readFacts(
       { client: client({
           balance: [5000n, 400n, 0n],
+          accountFlowrate: -100n,
           [`flow:${A}`]: [1_699_000_000n, 60n, 200n, 0n],
           [`flow:${B}`]: [1_699_000_000n, 40n, 200n, 0n],
         }) },
@@ -56,6 +59,7 @@ describe("readFacts", () => {
     const facts = await readFacts(
       { client: client({
           balance: [-1n, 400n, 0n],
+          accountFlowrate: 0n,
           [`flow:${A}`]: [0n, 0n, 0n, 0n],
           [`flow:${B}`]: [0n, 0n, 0n, 0n],
         }) },
@@ -70,6 +74,7 @@ describe("readFacts", () => {
       readFacts(
         { client: client({
             balance: [5000n, 400n, 0n],
+            accountFlowrate: -60n,
             [`flow:${A}`]: [0n, 60n, 0n, 0n],
             [`flow:${B}`]: new Error("RPC timeout"),
           }) },
@@ -83,6 +88,7 @@ describe("readFacts", () => {
     const error = await readFacts(
       { client: client({
           balance: new Error("RPC timeout"),
+          accountFlowrate: 0n,
           [`flow:${A}`]: new Error("RPC timeout"),
           [`flow:${B}`]: [0n, 0n, 0n, 0n],
         }) },
@@ -93,5 +99,66 @@ describe("readFacts", () => {
     // a Facts | ReadIncompleteError union even though this scenario always
     // rejects; narrow it back before reading a field only the error has.
     expect((error as ReadIncompleteError).failures).toHaveLength(2);
+  });
+
+  it("reports zero unlisted outflow for a net receiver", async () => {
+    // A positive account flowrate means the treasury is receiving on net;
+    // there is no outflow at all, listed or otherwise.
+    const facts = await readFacts(
+      { client: client({
+          balance: [5000n, 400n, 0n],
+          accountFlowrate: 500n,
+          [`flow:${A}`]: [0n, 10n, 0n, 0n],
+          [`flow:${B}`]: [0n, 20n, 0n, 0n],
+        }) },
+      policy(),
+      1_700_000_000,
+    );
+    expect(facts.unlistedOutflowWeiPerSec).toBe(0n);
+  });
+
+  it("attributes drain beyond the listed streams to unlisted outflow", async () => {
+    // Whole-account outflow is 300/sec; the policy only names 100/sec of it.
+    const facts = await readFacts(
+      { client: client({
+          balance: [5000n, 400n, 0n],
+          accountFlowrate: -300n,
+          [`flow:${A}`]: [0n, 60n, 0n, 0n],
+          [`flow:${B}`]: [0n, 40n, 0n, 0n],
+        }) },
+      policy(),
+      1_700_000_000,
+    );
+    expect(facts.unlistedOutflowWeiPerSec).toBe(200n);
+  });
+
+  it("clamps unlisted outflow to zero when listed streams exceed the measured total", async () => {
+    // Possible for one block around an update: never let this go negative.
+    const facts = await readFacts(
+      { client: client({
+          balance: [5000n, 400n, 0n],
+          accountFlowrate: -50n,
+          [`flow:${A}`]: [0n, 60n, 0n, 0n],
+          [`flow:${B}`]: [0n, 40n, 0n, 0n],
+        }) },
+      policy(),
+      1_700_000_000,
+    );
+    expect(facts.unlistedOutflowWeiPerSec).toBe(0n);
+  });
+
+  it("fails closed when getAccountFlowrate fails, exactly as a failing getFlowInfo does", async () => {
+    await expect(
+      readFacts(
+        { client: client({
+            balance: [5000n, 400n, 0n],
+            accountFlowrate: new Error("RPC timeout"),
+            [`flow:${A}`]: [0n, 60n, 0n, 0n],
+            [`flow:${B}`]: [0n, 40n, 0n, 0n],
+          }) },
+        policy(),
+        1_700_000_000,
+      ),
+    ).rejects.toBeInstanceOf(ReadIncompleteError);
   });
 });

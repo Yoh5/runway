@@ -87,7 +87,8 @@ function considerRestore(facts: Facts, policy: Policy, runwaySec: bigint | null)
 
 export function decide(facts: Facts, policy: Policy): Decision {
   const ordered = shedOrder(facts, policy);
-  const netOutflow = ordered.reduce((sum, e) => sum + e.rate, 0n);
+  const listedOutflow = ordered.reduce((sum, e) => sum + e.rate, 0n);
+  const netOutflow = listedOutflow + facts.unlistedOutflowWeiPerSec;
 
   if (netOutflow === 0n) {
     return considerRestore(facts, policy, null);

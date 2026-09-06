@@ -36,6 +36,12 @@ export type Facts = {
   availableBalanceWei: bigint;
   depositWei: bigint;
   streams: Stream[];
+  /**
+   * Net outflow, in wei per second, to receivers the policy does not list.
+   * Runway cannot adjust these streams -- it has no mandate over them -- but
+   * their drain is real and counts against how long the money lasts.
+   */
+  unlistedOutflowWeiPerSec: bigint;
 };
 
 export type AdjustmentReason = "budget-shed" | "restore-to-committed";
