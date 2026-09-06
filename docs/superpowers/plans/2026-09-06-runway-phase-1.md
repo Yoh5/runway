@@ -19,9 +19,9 @@
 - Permissions bitmap on the mandate is **6** (`update | delete`), never 7.
 - KeeperHub action type: `superfluid/update-flow`. Request body fields: `chainId`, `token`, `sender`, `receiver`, `flowRate`, `userData`.
 - KeeperHub auth: `Authorization: Bearer kh_...`, needs scope `mcp:write` to broadcast. Rate limit 60 requests/minute.
-- Every write is simulated first (`"simulate": true`) and broadcast only when the response has `success: true` and `wouldRevert: false`, using the identical body.
+- Every write is simulated first — **locally, with viem `simulateContract` against our own RPC, never with KeeperHub's `simulate` flag.** The protocol-action route does not implement that flag (verified: `simulate` appears in `app/api/execute/{transfer,contract-call,check-and-execute}/route.ts` and in `_lib/simulate-flag.ts`, and nowhere in the catch-all `[...slug]/route.ts` that serves protocol actions). Sending `"simulate": true` there is an ignored unknown field, so the "simulation" would broadcast a real transaction and the broadcast that followed would send a second one.
 - Idempotency keys replay for 24 hours only, so every key carries a time bucket.
-- An execution counts as landed only when `status: "completed"` **and** the matching `receipts[]` entry has `verified: true` and `receiptStatus: "success"`.
+- **A protocol write is synchronous.** The route broadcasts, waits, and re-verifies the receipt against the chain before answering (`completeExecution`, KEEP-966: *"independently re-verifies the claimed transaction against the chain — its returned outcome, not `result.success`, is authoritative"*). So `success: true` with a `transactionHash` already means the receipt was checked on chain. There is no 202, and the response carries no `executionId`, so there is nothing to poll: the `receipts[].verified` flow documented for `/transfer` does not apply to this route.
 - **Secrets:** no secret value is ever pasted into the conversation, written into a file that is committed, or read aloud by a script. Scripts that check configuration print presence booleans only. `.env` is gitignored; `.env.example` carries names with empty values.
 - No count produced by a run is written into a document unless a test reads it back off the source.
 
@@ -1704,24 +1704,35 @@ Task 2's suite.
 
 - [ ] **Step 5: Implement the executor**
 
-`src/keeperhub/execute.ts` follows the documented safe sequence exactly:
+`src/keeperhub/execute.ts`:
 
 1. Build the body once:
    `{ chainId, token, sender, receiver, flowRate: toRateWeiPerSec.toString(), userData: "0x" }`.
-2. `POST /api/execute/superfluid/update-flow` with that body plus `simulate: true`.
-   Continue only on `success: true` and `wouldRevert: false`.
-3. Re-send the identical body without `simulate`, with header
+2. **Simulate locally**, through `deps.simulate` — a viem `simulateContract` call against
+   `CFA_FORWARDER_ADDRESS.updateFlow` with the same arguments and `account` set to the
+   KeeperHub Turnkey EOA. Continue only if it does not revert. This is what catches an
+   ACL denial, a missing mandate, or an exhausted allowance, and it catches them before
+   spending one of the organisation's metered executions.
+3. `POST /api/execute/superfluid/update-flow` with that body, header
    `Idempotency-Key: <idempotencyKey(...)>` and `Authorization: Bearer <key>`.
-4. Poll `GET /api/execute/{executionId}/status`, honouring `X-Poll-Interval-Hint`, until
-   `status` is terminal or the poll budget is spent.
-5. Return `landed` only when `status === "completed"` and a `receipts[]` entry has
-   `verified: true` and `receiptStatus: "success"`. Anything else is `refused` or
-   `unresolved` — never `landed`.
+4. **The response is terminal.** `success: true` with a `transactionHash` is `landed`:
+   KeeperHub has already re-fetched and verified the receipt against the chain before
+   answering. `success: false` is `refused`, carrying `error` and, when present,
+   `rejection`. The body also carries `transactionLink`, `gasUsed`, `effectiveGasPrice`
+   and `sponsored`; record them.
+5. `unresolved` is reserved for the case where our own request failed in a way that
+   leaves the outcome unknown — a socket error or a timeout after the request was sent.
+   The idempotency key is what makes the next tick safe: the route finalises a broadcast
+   key as success or failed and never releases it, so a retry cannot re-broadcast.
 
-A `409` with `code: "idempotency_in_progress"` is retried with the same key after the
-hinted interval. A `409` with `code: "idempotency_conflict"` is `refused`: the body
-differs from what that key first sent, and rotating the key here would broadcast a
-second transaction for work that may already be live.
+A `409` with `code: "idempotency_in_progress"` is retried with the same key. A `409` with
+`code: "idempotency_conflict"` is `refused`: the body differs from what that key first
+sent, and rotating the key here would broadcast a second transaction for work that may
+already be live.
+
+`sponsored: true` means a relayer submitted the transaction, so the explorer will show a
+sender that is not our wallet and a value of `0`. Record the flag beside the hash, or the
+evidence document will look wrong to anyone who checks it.
 
 The API key is read from `process.env.KEEPERHUB_API_KEY` at the call site and passed in
 through `ExecutorDeps`. It is never logged, never included in an error message, and never
