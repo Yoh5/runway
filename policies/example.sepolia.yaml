@@ -26,6 +26,12 @@ recipients:
     label: "Discretionary grant"
     tier: discretionary
     committedRateWeiPerSec: "100000000000"
-    floorRateWeiPerSec: "0"
+    # Non-zero on purpose: a floor of zero means the shed may close this
+    # stream for good. On Superfluid a rate-zero stream does not exist, so
+    # restoring it would require a createFlow call, and the mandate
+    # (permissions: update | delete) deliberately withholds create -- Runway
+    # can never reopen a stream it closed. Keep a non-zero floor on any
+    # stream that must stay restorable.
+    floorRateWeiPerSec: "20000000000"
 escalation:
   webhook: "https://example.invalid/hook"

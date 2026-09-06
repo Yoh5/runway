@@ -1,4 +1,5 @@
 import {
+  type Address,
   type Adjustment,
   type Decision,
   type Escalation,
@@ -50,6 +51,8 @@ function considerRestore(facts: Facts, policy: Policy, runwaySec: bigint | null)
     escalation: null,
   };
 
+  const holdWith = (escalation: Escalation | null): Decision => ({ ...hold, escalation });
+
   const committedOutflow = policy.recipients.reduce(
     (sum, r) => sum + r.committedRateWeiPerSec,
     0n,
@@ -74,9 +77,20 @@ function considerRestore(facts: Facts, policy: Policy, runwaySec: bigint | null)
   });
 
   const adjustments: Adjustment[] = [];
+  const closedReceivers: Address[] = [];
   for (const recipient of restoreOrder) {
     const rate = currentRate.get(recipient.address) ?? 0n;
     if (rate === recipient.committedRateWeiPerSec) continue;
+    // On Superfluid a rate-zero stream does not exist: raising it again is a
+    // `createFlow` call, and the mandate (permissions: update | delete,
+    // deliberately not create) refuses to grant that. A stream the shed took
+    // to zero can never be restored by Runway -- the controller's ruling is
+    // that a zero floor means the stream may be closed permanently, and an
+    // operator who wants a stream restorable must set a non-zero floor.
+    if (rate === 0n) {
+      closedReceivers.push(recipient.address);
+      continue;
+    }
     adjustments.push({
       receiver: recipient.address,
       fromRateWeiPerSec: rate,
@@ -85,8 +99,16 @@ function considerRestore(facts: Facts, policy: Policy, runwaySec: bigint | null)
     });
   }
 
-  if (adjustments.length === 0) return hold;
-  return { kind: "restore", runwaySec, breach: false, adjustments, escalation: null };
+  const escalation: Escalation | null =
+    closedReceivers.length > 0
+      ? {
+          kind: "stream-closed-cannot-restore",
+          detail: `stream(s) at rate zero cannot be restored (would require createFlow, which the mandate withholds): ${closedReceivers.join(", ")}`,
+        }
+      : null;
+
+  if (adjustments.length === 0) return holdWith(escalation);
+  return { kind: "restore", runwaySec, breach: false, adjustments, escalation };
 }
 
 export function decide(facts: Facts, policy: Policy): Decision {

@@ -96,16 +96,21 @@ describe("decide — restore weighs unlisted outflow", () => {
   it("still restores when the unlisted drain is small enough to clear the band", () => {
     // Same shape as above, but unlisted outflow is only 50/sec. Committed
     // total = 300 + 50 = 350/sec: 90000/350 = 257s (350*257=89950), which
-    // clears the 250s band, so restoration proceeds.
+    // clears the 250s band, so restoration proceeds for CRIT and STD.
+    // DISC sits at rate 0 -- closed, per the controller's ruling a rate-zero
+    // stream cannot be reopened by Runway -- so it raises the escalation
+    // instead of a 0 -> 100 adjustment.
     const f = { ...facts(90_000n, [80n, 50n, 0n]), unlistedOutflowWeiPerSec: 50n };
     const d = decide(f, policy());
     expect(d.kind).toBe("restore");
-    expect(d.adjustments).toHaveLength(3);
+    expect(d.adjustments).toHaveLength(2);
     for (const a of d.adjustments) {
       expect(a.toRateWeiPerSec).toBe(100n);
       expect(a.reason).toBe("restore-to-committed");
     }
-    expect(d.adjustments.map((a) => a.receiver)).toEqual([CRIT, STD, DISC]);
+    expect(d.adjustments.map((a) => a.receiver)).toEqual([CRIT, STD]);
+    expect(d.escalation?.kind).toBe("stream-closed-cannot-restore");
+    expect(d.escalation?.detail).toContain(DISC);
   });
 
   it("evaluates on the merits, not the old zero-committed-outflow guard", () => {
@@ -137,17 +142,17 @@ describe("decide — restore weighs unlisted outflow", () => {
     }
   });
 
-  it("is unchanged from before when unlisted outflow is zero", () => {
-    // Pins the pre-existing behaviour from decide-restore.test.ts: committed
-    // outflow 300/sec, committed total unchanged at 300/sec since unlisted is
-    // 0. 75000/300 = 250s clears the band, restoring the one lagging stream.
+  it("is unchanged from before when unlisted outflow is zero, modulo the closed-stream rule", () => {
+    // Committed outflow 300/sec, committed total unchanged at 300/sec since
+    // unlisted is 0. 75000/300 = 250s clears the band. CRIT and STD already
+    // sit at their committed rate (nothing to do); DISC sits at rate 0 --
+    // closed, so it raises the escalation rather than a 0 -> 100 adjustment.
     const f = { ...facts(75_000n, [100n, 100n, 0n]), unlistedOutflowWeiPerSec: 0n };
     const d = decide(f, policy());
-    expect(d.kind).toBe("restore");
+    expect(d.kind).toBe("hold");
     expect(d.breach).toBe(false);
-    expect(d.adjustments).toHaveLength(1);
-    expect(d.adjustments[0]?.receiver).toBe(DISC);
-    expect(d.adjustments[0]?.toRateWeiPerSec).toBe(100n);
-    expect(d.adjustments[0]?.reason).toBe("restore-to-committed");
+    expect(d.adjustments).toEqual([]);
+    expect(d.escalation?.kind).toBe("stream-closed-cannot-restore");
+    expect(d.escalation?.detail).toContain(DISC);
   });
 });

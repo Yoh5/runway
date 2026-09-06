@@ -48,19 +48,54 @@ describe("decide — restore", () => {
     expect(d.adjustments).toEqual([]);
   });
 
-  it("restores toward committed rates once above the band", () => {
+  it("cannot restore a closed (rate-zero) stream: escalates instead of emitting a 0 -> 100 adjustment", () => {
+    // DISC sits at rate 0 -- a rate-zero Superfluid stream does not exist,
+    // so restoring it would be a createFlow call, which the mandate
+    // (permissions: update | delete, deliberately not create) refuses to
+    // grant. No adjustment is emitted for it; an escalation names it instead.
     const d = decide(facts(75_000n, [100n, 100n, 0n]), policy());
-    expect(d.kind).toBe("restore");
+    expect(d.kind).toBe("hold");
     expect(d.breach).toBe(false);
-    expect(d.adjustments).toHaveLength(1);
-    expect(d.adjustments[0]?.receiver).toBe(DISC);
-    expect(d.adjustments[0]?.toRateWeiPerSec).toBe(100n);
-    expect(d.adjustments[0]?.reason).toBe("restore-to-committed");
+    expect(d.adjustments).toEqual([]);
+    expect(d.escalation?.kind).toBe("stream-closed-cannot-restore");
+    expect(d.escalation?.detail).toContain(DISC);
   });
 
-  it("restores critical before discretionary", () => {
-    const d = decide(facts(75_000n, [0n, 0n, 0n]), policy());
-    expect(d.adjustments.map((a) => a.receiver)).toEqual([CRIT, STD, DISC]);
+  it("restores critical and standard while escalating for a closed discretionary stream", () => {
+    // Critical and standard sit at a non-zero, lagging rate (still
+    // restorable); discretionary sits at 0 (closed, cannot be reopened by
+    // Runway), so it raises the escalation alongside the other two restores.
+    const d = decide(facts(75_000n, [50n, 70n, 0n]), policy());
+    expect(d.kind).toBe("restore");
+    expect(d.adjustments.map((a) => a.receiver)).toEqual([CRIT, STD]);
+    expect(d.adjustments.every((a) => a.toRateWeiPerSec === 100n)).toBe(true);
+    expect(d.escalation?.kind).toBe("stream-closed-cannot-restore");
+    expect(d.escalation?.detail).toContain(DISC);
+  });
+
+  it("raises stream-closed-cannot-restore alone when every restorable stream is already closed", () => {
+    // A policy with a single, already-closed discretionary recipient: nothing
+    // restorable exists, so the decision carries the escalation with no
+    // adjustments at all.
+    const discOnly = policy({
+      recipients: [
+        { address: DISC, label: "disc", tier: "discretionary", committedRateWeiPerSec: 100n, floorRateWeiPerSec: 0n },
+      ],
+    });
+    const f = {
+      nowSec: 1_700_000_000,
+      availableBalanceWei: 25_000n,
+      depositWei: 0n,
+      streams: [{ receiver: DISC, flowRateWeiPerSec: 0n }],
+      unlistedOutflowWeiPerSec: 0n,
+    };
+    const d = decide(f, discOnly);
+    expect(d.kind).toBe("hold");
+    expect(d.adjustments).toEqual([]);
+    expect(d.escalation).toEqual({
+      kind: "stream-closed-cannot-restore",
+      detail: expect.stringContaining(DISC),
+    });
   });
 
   it("holds when every stream already runs at its committed rate", () => {

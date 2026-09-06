@@ -53,8 +53,10 @@ export type Adjustment = {
   reason: AdjustmentReason;
 };
 
+export type EscalationKind = "floors-exceed-budget" | "stream-closed-cannot-restore";
+
 export type Escalation = {
-  kind: "floors-exceed-budget";
+  kind: EscalationKind;
   detail: string;
 };
 
