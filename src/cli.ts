@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createPublicClient, http } from "viem";
@@ -9,7 +9,9 @@ import { executeAdjustment, type ExecutorDeps, type SimulateFn } from "./keeperh
 import { decide } from "./policy/decide.js";
 import { loadPolicy } from "./policy/load.js";
 import type { Adjustment, Decision, Policy } from "./policy/types.js";
-import { toSerialisable } from "./runner/record.js";
+import { renderReport } from "./report/render.js";
+import { fromSerialisable, toSerialisable } from "./runner/record.js";
+import type { RunRecord } from "./runner/record.js";
 import { runOnce, type RunDeps } from "./runner/run.js";
 
 /**
@@ -72,6 +74,29 @@ function printDecisionTable(
 export async function readPolicy(policyPath: string): Promise<Policy> {
   const yamlText = await readFile(policyPath, "utf8");
   return loadPolicy(yamlText);
+}
+
+/**
+ * Reads every `runs/*.json` file, reviving each back into a `RunRecord`. An
+ * empty or missing directory reads as no runs at all — the report renders
+ * "no runs recorded yet" rather than the CLI throwing before a single run has
+ * ever landed.
+ */
+export async function readRuns(dirPath: string): Promise<RunRecord[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(dirPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+
+  const records: RunRecord[] = [];
+  for (const entry of entries.filter((name) => name.endsWith(".json"))) {
+    const text = await readFile(path.join(dirPath, entry), "utf8");
+    records.push(fromSerialisable(JSON.parse(text)));
+  }
+  return records;
 }
 
 function buildReaderDeps(): ReaderDeps {
@@ -153,6 +178,7 @@ export type CliDeps = {
   notify: (webhook: string, payload: unknown) => Promise<void>;
   mkdir: (dirPath: string, options: { recursive: boolean }) => Promise<unknown>;
   writeFile: (filePath: string, data: string) => Promise<void>;
+  readRuns: (dirPath: string) => Promise<RunRecord[]>;
   log: (message: string) => void;
   table: (rows: Record<string, string>[]) => void;
 };
@@ -169,6 +195,19 @@ export type CliDeps = {
  * decision into a broadcast.
  */
 export async function runCli(deps: CliDeps, args: string[]): Promise<Decision | undefined> {
+  if (args.includes("--report")) {
+    // Reads runs/*.json (not any policy) and writes a static HTML page.
+    // Takes no policy path at all, so this branch returns before the usual
+    // "usage" check below, which requires one.
+    const outPath = path.resolve(args.find((a) => !a.startsWith("--")) ?? path.join("runs", "report.html"));
+    const records = await deps.readRuns(path.resolve("runs"));
+    const html = renderReport(records);
+    await deps.mkdir(path.dirname(outPath), { recursive: true });
+    await deps.writeFile(outPath, html);
+    deps.log(outPath);
+    return undefined;
+  }
+
   const dryRun = args.includes("--dry-run");
   const policyPath = args.find((a) => !a.startsWith("--"));
   if (!policyPath) {
@@ -220,6 +259,7 @@ function realCliDeps(): CliDeps {
     notify: notifyWebhook,
     mkdir,
     writeFile,
+    readRuns,
     log: (message) => console.log(message),
     table: (rows) => console.table(rows),
   };

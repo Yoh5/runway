@@ -3,11 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { PublicClientLike, ReaderDeps } from "../src/chain/reader.js";
-import { readPolicy, runCli, type CliDeps } from "../src/cli.js";
+import { readPolicy, readRuns, runCli, type CliDeps } from "../src/cli.js";
 import type { ExecutionOutcome, ExecutorDeps } from "../src/keeperhub/execute.js";
 import { decide } from "../src/policy/decide.js";
 import { PolicyError } from "../src/policy/load.js";
 import type { Address, Facts, Policy } from "../src/policy/types.js";
+import type { RunRecord } from "../src/runner/record.js";
 
 const CRIT = "0x1111111111111111111111111111111111111111" as Address;
 const STD = "0x2222222222222222222222222222222222222222" as Address;
@@ -90,6 +91,7 @@ function stubDeps(over: Partial<CliDeps> = {}): CliDeps {
     notify: async () => {},
     mkdir: async () => undefined,
     writeFile: async () => {},
+    readRuns: async () => [],
     log: () => {},
     table: () => {},
     ...over,
@@ -170,6 +172,107 @@ describe("runCli — dry run", () => {
   it("fails with a clear usage error when no policy path is given", async () => {
     const deps = stubDeps();
     await expect(runCli(deps, ["--dry-run"])).rejects.toThrow(/usage/i);
+  });
+});
+
+function landedRecord(startedAt: string): RunRecord {
+  return {
+    startedAt,
+    nowSec: 1_700_000_000,
+    facts: facts(15_000n, [100n, 100n, 100n]),
+    decision: decide(facts(15_000n, [100n, 100n, 100n]), policy()),
+    outcomes: [{ adjustment: { receiver: DISC, fromRateWeiPerSec: 100n, toRateWeiPerSec: 0n, reason: "budget-shed" }, outcome: LANDED }],
+    escalations: [],
+  };
+}
+
+describe("runCli — --report (I3)", () => {
+  it("reads runs via deps.readRuns, renders them, and writes the HTML with deps.writeFile", async () => {
+    const written: { path: string; data: string }[] = [];
+    let mkdirPath: string | undefined;
+    let readRunsDir: string | undefined;
+    const deps = stubDeps({
+      readRuns: async (dir) => {
+        readRunsDir = dir;
+        return [landedRecord("2026-09-10T12:00:00.000Z")];
+      },
+      mkdir: async (dirPath) => {
+        mkdirPath = dirPath;
+        return undefined;
+      },
+      writeFile: async (filePath, data) => {
+        written.push({ path: filePath, data });
+      },
+    });
+
+    await runCli(deps, ["--report", "out/report.html"]);
+
+    expect(readRunsDir).toMatch(/runs$/);
+    expect(mkdirPath).toMatch(/out$/);
+    expect(written).toHaveLength(1);
+    expect(written[0]?.path).toMatch(/out[\\/]report\.html$/);
+    expect(written[0]?.data).toContain("<!doctype html>");
+    expect(written[0]?.data).toContain("https://sepolia.etherscan.io/tx/0xabc");
+  });
+
+  it("defaults the output path to runs/report.html when none is given", async () => {
+    const written: { path: string; data: string }[] = [];
+    const deps = stubDeps({
+      readRuns: async () => [],
+      writeFile: async (filePath, data) => {
+        written.push({ path: filePath, data });
+      },
+    });
+
+    await runCli(deps, ["--report"]);
+
+    expect(written[0]?.path.replace(/\\/g, "/")).toMatch(/runs\/report\.html$/);
+    expect(written[0]?.data).toMatch(/no runs recorded yet/i);
+  });
+
+  it("requires no policy path at all -- --report alone does not throw the usage error", async () => {
+    const deps = stubDeps({ readRuns: async () => [] });
+    await expect(runCli(deps, ["--report"])).resolves.toBeUndefined();
+  });
+
+  it("constructs no executor and calls readFacts/execute never (a report run touches no chain)", async () => {
+    let readFactsCalls = 0;
+    let executeCalls = 0;
+    const deps = stubDeps({
+      readRuns: async () => [],
+      readFacts: async () => {
+        readFactsCalls += 1;
+        return facts(15_000n, [100n, 100n, 100n]);
+      },
+      execute: async () => {
+        executeCalls += 1;
+        return LANDED;
+      },
+    });
+    await runCli(deps, ["--report"]);
+    expect(readFactsCalls).toBe(0);
+    expect(executeCalls).toBe(0);
+  });
+});
+
+describe("readRuns (I3)", () => {
+  it("reads and revives every runs/*.json file in a directory", async () => {
+    const { toSerialisable } = await import("../src/runner/record.js");
+    const dir = await mkdtemp(join(tmpdir(), "runway-runs-test-"));
+    const record = landedRecord("2026-09-10T12:00:00.000Z");
+    await nodeWriteFile(join(dir, "run-1.json"), JSON.stringify(toSerialisable(record)), "utf8");
+    await nodeWriteFile(join(dir, "not-a-run.txt"), "ignore me", "utf8");
+
+    const records = await readRuns(dir);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toEqual(record);
+    expect(typeof records[0]?.decision?.runwaySec).toBe("bigint");
+  });
+
+  it("reads as no runs at all when the directory does not exist yet", async () => {
+    const records = await readRuns(join(tmpdir(), "runway-runs-does-not-exist-9f3a"));
+    expect(records).toEqual([]);
   });
 });
 
