@@ -7,7 +7,7 @@ import { readFacts, type ReaderDeps } from "./chain/reader.js";
 import { executeAdjustment, type ExecutorDeps, type SimulateFn } from "./keeperhub/execute.js";
 import { decide } from "./policy/decide.js";
 import { loadPolicy } from "./policy/load.js";
-import type { Decision, Policy } from "./policy/types.js";
+import type { Adjustment, Decision, Policy } from "./policy/types.js";
 import { toSerialisable } from "./runner/record.js";
 import { runOnce, type RunDeps } from "./runner/run.js";
 
@@ -43,18 +43,22 @@ function reason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function printDecisionTable(decision: Decision): void {
-  console.log(`decision: ${decision.kind}`);
-  console.log(`runwaySec: ${decision.runwaySec ?? "n/a"}`);
-  console.log(`breach: ${decision.breach}`);
+function printDecisionTable(
+  decision: Decision,
+  log: (message: string) => void,
+  table: (rows: Record<string, string>[]) => void,
+): void {
+  log(`decision: ${decision.kind}`);
+  log(`runwaySec: ${decision.runwaySec ?? "n/a"}`);
+  log(`breach: ${decision.breach}`);
   if (decision.escalation) {
-    console.log(`escalation: ${decision.escalation.kind} — ${decision.escalation.detail}`);
+    log(`escalation: ${decision.escalation.kind} — ${decision.escalation.detail}`);
   }
   if (decision.adjustments.length === 0) {
-    console.log("adjustments: none");
+    log("adjustments: none");
     return;
   }
-  console.table(
+  table(
     decision.adjustments.map((a) => ({
       receiver: a.receiver,
       from: a.fromRateWeiPerSec.toString(),
@@ -64,7 +68,7 @@ function printDecisionTable(decision: Decision): void {
   );
 }
 
-async function readPolicy(policyPath: string): Promise<Policy> {
+export async function readPolicy(policyPath: string): Promise<Policy> {
   const yamlText = await readFile(policyPath, "utf8");
   return loadPolicy(yamlText);
 }
@@ -126,47 +130,102 @@ async function notifyWebhook(webhook: string, payload: unknown): Promise<void> {
   }
 }
 
-async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+/**
+ * Every collaborator `runCli` needs, as a function — the same shape `RunDeps`
+ * gives the runner. This is what lets the dry-run path (the exact path a
+ * live Sepolia run depends on) be exercised in a test with no network, no
+ * filesystem and no risk of a real broadcast: a test only ever has to supply
+ * plain stub functions and count how many times each is called.
+ */
+export type CliDeps = {
+  readPolicy: (policyPath: string) => Promise<Policy>;
+  now: () => number;
+  buildReaderDeps: () => ReaderDeps;
+  readFacts: typeof readFacts;
+  buildExecutorDeps: () => ExecutorDeps;
+  execute: (
+    deps: ExecutorDeps,
+    policy: Policy,
+    adjustment: Adjustment,
+    nowSec: number,
+  ) => ReturnType<typeof executeAdjustment>;
+  notify: (webhook: string, payload: unknown) => Promise<void>;
+  mkdir: (dirPath: string, options: { recursive: boolean }) => Promise<unknown>;
+  writeFile: (filePath: string, data: string) => Promise<void>;
+  log: (message: string) => void;
+  table: (rows: Record<string, string>[]) => void;
+};
+
+/**
+ * Runs the CLI's argument-parsed logic against injected collaborators.
+ * `main` below is the only place that builds the real (network- and
+ * filesystem-touching) `CliDeps`; every other consumer — namely tests — can
+ * supply stubs instead.
+ *
+ * The dry-run branch constructs no `ExecutorDeps` and calls neither
+ * `execute`, `mkdir` nor `writeFile`: it reads, decides, prints, and returns
+ * the `Decision` it made. Nothing else in this function can turn that
+ * decision into a broadcast.
+ */
+export async function runCli(deps: CliDeps, args: string[]): Promise<Decision | undefined> {
   const dryRun = args.includes("--dry-run");
   const policyPath = args.find((a) => !a.startsWith("--"));
   if (!policyPath) {
-    console.error("usage: cli.ts <policy.yaml> [--dry-run]");
-    process.exitCode = 1;
-    return;
+    throw new Error("usage: cli.ts <policy.yaml> [--dry-run]");
   }
 
-  const policy = await readPolicy(policyPath);
-  const nowSec = Math.floor(Date.now() / 1000);
+  const policy = await deps.readPolicy(policyPath);
+  const nowSec = deps.now();
 
   if (dryRun) {
     // Reads and decides but constructs no executor at all, so this path
     // cannot write to the chain even if `decide` returned adjustments.
-    const readerDeps = buildReaderDeps();
-    const facts = await readFacts(readerDeps, policy, nowSec);
+    const readerDeps = deps.buildReaderDeps();
+    const facts = await deps.readFacts(readerDeps, policy, nowSec);
     const decision = decide(facts, policy);
-    printDecisionTable(decision);
-    return;
+    printDecisionTable(decision, deps.log, deps.table);
+    return decision;
   }
 
-  const readerDeps = buildReaderDeps();
-  const executorDeps = buildExecutorDeps();
-  const deps: RunDeps = {
-    readFacts: (p, n) => readFacts(readerDeps, p, n),
-    execute: (p, adjustment, n) => executeAdjustment(executorDeps, p, adjustment, n),
-    notify: notifyWebhook,
+  const readerDeps = deps.buildReaderDeps();
+  const executorDeps = deps.buildExecutorDeps();
+  const runDeps: RunDeps = {
+    readFacts: (p, n) => deps.readFacts(readerDeps, p, n),
+    execute: (p, adjustment, n) => deps.execute(executorDeps, p, adjustment, n),
+    notify: deps.notify,
   };
 
-  const record = await runOnce(deps, policy, nowSec);
+  const record = await runOnce(runDeps, policy, nowSec);
 
   const runsDir = path.resolve("runs");
-  await mkdir(runsDir, { recursive: true });
+  await deps.mkdir(runsDir, { recursive: true });
   // ISO timestamps carry colons, which Windows filesystems reject; the
   // filename is sanitised, the recorded `startedAt` field is not.
   const fileName = `${record.startedAt.replace(/[:.]/g, "-")}.json`;
   const filePath = path.join(runsDir, fileName);
-  await writeFile(filePath, JSON.stringify(toSerialisable(record), null, 2));
-  console.log(filePath);
+  await deps.writeFile(filePath, JSON.stringify(toSerialisable(record), null, 2));
+  deps.log(filePath);
+  return undefined;
+}
+
+function realCliDeps(): CliDeps {
+  return {
+    readPolicy,
+    now: () => Math.floor(Date.now() / 1000),
+    buildReaderDeps,
+    readFacts,
+    buildExecutorDeps,
+    execute: executeAdjustment,
+    notify: notifyWebhook,
+    mkdir,
+    writeFile,
+    log: (message) => console.log(message),
+    table: (rows) => console.table(rows),
+  };
+}
+
+async function main(): Promise<void> {
+  await runCli(realCliDeps(), process.argv.slice(2));
 }
 
 main().catch((error: unknown) => {

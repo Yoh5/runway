@@ -1,0 +1,174 @@
+import { mkdtemp, writeFile as nodeWriteFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import type { PublicClientLike, ReaderDeps } from "../src/chain/reader.js";
+import { readPolicy, runCli, type CliDeps } from "../src/cli.js";
+import type { ExecutionOutcome, ExecutorDeps } from "../src/keeperhub/execute.js";
+import { decide } from "../src/policy/decide.js";
+import { PolicyError } from "../src/policy/load.js";
+import type { Address, Facts, Policy } from "../src/policy/types.js";
+
+const CRIT = "0x1111111111111111111111111111111111111111" as Address;
+const STD = "0x2222222222222222222222222222222222222222" as Address;
+const DISC = "0x3333333333333333333333333333333333333333" as Address;
+
+/** Matches the fixtures in tests/runner/run.test.ts (Task 4's suite). */
+function policy(over: Partial<Policy> = {}): Policy {
+  return {
+    version: 1,
+    chainId: 11155111,
+    token: "0x0000000000000000000000000000000000000aaa" as Address,
+    sender: "0x0000000000000000000000000000000000000bbb" as Address,
+    minRunwaySec: 100n,
+    targetRunwaySec: 200n,
+    hysteresisSec: 50n,
+    recipients: [
+      { address: CRIT, label: "crit", tier: "critical", committedRateWeiPerSec: 100n, floorRateWeiPerSec: 80n },
+      { address: STD, label: "std", tier: "standard", committedRateWeiPerSec: 100n, floorRateWeiPerSec: 50n },
+      { address: DISC, label: "disc", tier: "discretionary", committedRateWeiPerSec: 100n, floorRateWeiPerSec: 0n },
+    ],
+    escalation: { webhook: "https://example.invalid/hook" },
+    ...over,
+  };
+}
+
+function facts(balance: bigint, rates: [bigint, bigint, bigint]): Facts {
+  return {
+    nowSec: 1_700_000_000,
+    availableBalanceWei: balance,
+    depositWei: 0n,
+    streams: [
+      { receiver: CRIT, flowRateWeiPerSec: rates[0] },
+      { receiver: STD, flowRateWeiPerSec: rates[1] },
+      { receiver: DISC, flowRateWeiPerSec: rates[2] },
+    ],
+    unlistedOutflowWeiPerSec: 0n,
+  };
+}
+
+const LANDED: ExecutionOutcome = {
+  status: "landed",
+  transactionHash: "0xabc",
+  transactionLink: "https://sepolia.etherscan.io/tx/0xabc",
+  gasUsedWei: "1",
+  effectiveGasPriceWei: "1000000000",
+  sponsored: false,
+};
+
+/** A `PublicClientLike` that fails loudly if a dry run ever reaches the chain client. */
+function unusedClient(): PublicClientLike {
+  return {
+    readContract: async () => {
+      throw new Error("test double: readContract should not be called — readFacts is stubbed directly");
+    },
+  };
+}
+
+/** A structurally valid but never-used `ExecutorDeps`, for tests that must prove it is never built. */
+function fakeExecutorDeps(): ExecutorDeps {
+  return {
+    fetch: async () => {
+      throw new Error("test double: fetch should not be called");
+    },
+    baseUrl: "https://example.invalid",
+    apiKey: "unused",
+    simulate: async () => ({ reverted: false }),
+    pollBudgetMs: 0,
+    sleep: async () => {},
+  };
+}
+
+function stubDeps(over: Partial<CliDeps> = {}): CliDeps {
+  return {
+    readPolicy: async () => policy(),
+    now: () => 1_700_000_000,
+    buildReaderDeps: (): ReaderDeps => ({ client: unusedClient() }),
+    readFacts: async () => facts(15_000n, [100n, 100n, 100n]),
+    buildExecutorDeps: fakeExecutorDeps,
+    execute: async () => LANDED,
+    notify: async () => {},
+    mkdir: async () => undefined,
+    writeFile: async () => {},
+    log: () => {},
+    table: () => {},
+    ...over,
+  };
+}
+
+describe("runCli — dry run", () => {
+  it("produces the decision the policy engine would produce for those facts", async () => {
+    const p = policy();
+    const f = facts(15_000n, [100n, 100n, 100n]);
+    const deps = stubDeps({
+      readPolicy: async () => p,
+      readFacts: async () => f,
+    });
+
+    const decision = await runCli(deps, ["policy.yaml", "--dry-run"]);
+
+    expect(decision).toEqual(decide(f, p));
+    // Sanity: these facts breach the minimum runway, so the dry run is
+    // actually exercising the "reduce" branch, not a vacuous hold.
+    expect(decision?.kind).toBe("reduce");
+    expect(decision?.adjustments.length).toBeGreaterThan(0);
+  });
+
+  it("constructs no executor and performs no write", async () => {
+    let executorBuilds = 0;
+    let executeCalls = 0;
+    let mkdirCalls = 0;
+    let writeFileCalls = 0;
+
+    const deps = stubDeps({
+      buildExecutorDeps: () => {
+        executorBuilds += 1;
+        return fakeExecutorDeps();
+      },
+      execute: async () => {
+        executeCalls += 1;
+        return LANDED;
+      },
+      mkdir: async () => {
+        mkdirCalls += 1;
+        return undefined;
+      },
+      writeFile: async () => {
+        writeFileCalls += 1;
+      },
+    });
+
+    // These facts breach the minimum runway (see the test above), so a
+    // real dry run here *would* have adjustments to execute if the dry-run
+    // branch were wired wrong. It must still call none of these.
+    await runCli(deps, ["policy.yaml", "--dry-run"]);
+
+    expect(executorBuilds).toBe(0);
+    expect(executeCalls).toBe(0);
+    expect(mkdirCalls).toBe(0);
+    expect(writeFileCalls).toBe(0);
+  });
+
+  it("fails with a clear error, not a stack trace, for a policy path that does not exist", async () => {
+    const deps = stubDeps({ readPolicy });
+
+    await expect(runCli(deps, ["/definitely/does-not-exist-9f3a.yaml", "--dry-run"])).rejects.toThrow(
+      /ENOENT|no such file/i,
+    );
+  });
+
+  it("fails with a clear PolicyError, not a stack trace, for a malformed policy file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "runway-cli-test-"));
+    const badPolicyPath = join(dir, "bad-policy.yaml");
+    await nodeWriteFile(badPolicyPath, "version: 2\n", "utf8");
+
+    const deps = stubDeps({ readPolicy });
+
+    await expect(runCli(deps, [badPolicyPath, "--dry-run"])).rejects.toThrow(PolicyError);
+  });
+
+  it("fails with a clear usage error when no policy path is given", async () => {
+    const deps = stubDeps();
+    await expect(runCli(deps, ["--dry-run"])).rejects.toThrow(/usage/i);
+  });
+});
