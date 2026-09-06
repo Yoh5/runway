@@ -319,8 +319,10 @@ KeeperHub's own toolchain, which keeps the code legible to the people judging it
 
 - **Sepolia gas spikes.** KeeperHub measured 40 to 105 gwei on 2026-07-02 and moved
   their CI off live Sepolia because of it. One demo run is unaffected; a keeper on a
-  tight cadence is not. The cadence is therefore a policy input, and the run record
-  carries the gas paid so the cost is stated rather than hidden.
+  tight cadence is not. The cadence lives in the scheduled KeeperHub workflow rather
+  than in the policy document — it is an operational decision about how often to look,
+  not a rule about what to do — and the run record carries the gas paid, so the cost of
+  a given cadence is stated rather than discovered.
 - **No seeded Superfluid test data on Sepolia.** Fixtures are built here rather than
   reused. Extra work, no blocker.
 - **Superfluid is not on Base Sepolia**, so there is no near-zero-gas fallback chain.
