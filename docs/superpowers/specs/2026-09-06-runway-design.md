@@ -55,7 +55,8 @@ Everything below was read in the KeeperHub repository, not recalled.
 | Sepolia is a supported chain | `lib/rpc/rpc-config.ts:128` |
 | Direct execution endpoint, API-key authenticated, with idempotency, spending caps, rate and concurrency limits | `app/api/execute/[...slug]/route.ts` |
 | Action type format is `<protocol>/<action-slug>`, e.g. `superfluid/update-flow` | `plugins/protocol/steps/resolve-protocol-meta.ts:14-35` |
-| An execution counts as landed when status is `completed` and the matching receipt has `verified: true` and `receiptStatus: "success"` | `docs/guides/first-verified-transaction.md` |
+| A protocol write is **synchronous**: the route broadcasts, waits, and re-verifies the receipt against the chain before answering, so `success: true` with a `transactionHash` already carries a checked receipt. The response has no `executionId` and there is nothing to poll | `app/api/execute/[...slug]/route.ts`, `completeExecution` (KEEP-966) |
+| KeeperHub's `simulate` flag is implemented only on `/transfer`, `/contract-call` and `/check-and-execute`. The protocol route ignores it, so sending it would broadcast for real. Simulation is therefore **local**, with viem, before any POST | `app/api/execute/_lib/simulate-flag.ts` and the absence of any `simulate` in the catch-all route |
 
 ### Resolved by reading the chain, never hardcoded from memory
 
@@ -115,11 +116,14 @@ Decision = {
 }
 
 reason          = "budget-shed" | "restore-to-committed"
-escalation.kind = "floors-exceed-budget"
+escalation.kind = "floors-exceed-budget" | "stream-closed-cannot-restore"
 ```
 
-`floors-exceed-budget` is the only escalation the policy can raise, because it is the
-only one that follows from the facts alone. `read-incomplete` and `mandate-rejected` are
+Both escalations the policy raises follow from the facts alone, which is why it can raise
+them. `stream-closed-cannot-restore` names a stream an earlier shed took to zero: on
+Superfluid a rate-zero stream does not exist, so raising it again is a `create`, and the
+mandate deliberately withholds that permission. Runway reports the recipient it cannot
+resume paying rather than emitting a call it knows will be refused. `read-incomplete` and `mandate-rejected` are
 run-level escalations raised by the runner and the executor respectively; a pure
 function has no way to know that an RPC timed out or that a mandate was revoked.
 
@@ -135,9 +139,10 @@ Depends on: nothing.
 ### `executor`
 
 Takes adjustments and posts each one to
-`POST /api/execute/superfluid/update-flow` with an idempotency key, then polls
-`GET /api/execute/{executionId}/status` until the receipt reports `verified: true` and
-`receiptStatus: "success"`.
+`POST /api/execute/superfluid/update-flow` with an idempotency key, and reads the
+terminal response. There is no polling: the route answers only once the
+receipt has been re-verified against the chain, and its body carries no `executionId` to
+poll with.
 
 Depends on: the KeeperHub API and a `kh_` key held in the environment. Contains no
 policy — it cannot decide to skip, reorder or alter an adjustment.
@@ -176,6 +181,10 @@ recipients:
     label: "Community grants"
     tier: discretionary
     committedRateWeiPerSec: "..."
+    # A floor of zero means this stream may be closed for good. The shed can take
+    # it to zero, and Runway cannot reopen it: a rate-zero stream does not exist,
+    # so restoring it would be a `create`, which the mandate withholds. Give a
+    # non-zero floor to any stream that must stay restorable.
     floorRateWeiPerSec: "0"
 escalation:
   webhook: "<url>"
@@ -234,8 +243,11 @@ The property tests assert these directly.
 5. Determinism: identical facts and policy yield an identical decision, ordering
    included.
 6. Stability: when every stream's current rate already equals the rate this decision
-   would set, `adjustments` is empty and `kind` is `hold`. A no-op run writes nothing on
-   chain and costs no gas.
+   would set, `adjustments` is empty. A no-op run writes nothing on chain and costs no gas.
+   The `kind` is `hold` when there was nothing to do, and `reduce` with an empty adjustment
+   list when there was something to do and every stream was already at its floor — that
+   second case says "I decided to cut and could not", which is more truthful than reporting
+   a hold, and it always carries the `floors-exceed-budget` escalation.
 
 ## 8. Safety — the mandate
 
@@ -288,7 +300,9 @@ the source. This defect class has bitten this workspace before.
 ## 11. KeeperHub integration surface
 
 - `POST /api/execute/superfluid/update-flow` — every write.
-- `GET /api/execute/{executionId}/status` — verification, to `verified: true`.
+- Verification arrives in the write's own response, which KeeperHub answers only after
+  re-checking the receipt on chain. Independent confirmation is a `getFlowInfo` read: a
+  mined receipt proves a transaction landed, only a read proves the stream changed.
 - `GET /api/chains` — confirm Sepolia is enabled for the org before the first run.
 - A **scheduled KeeperHub workflow** that calls the runner, so the integration is visible
   inside their product and not only through their API.

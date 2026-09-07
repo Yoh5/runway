@@ -2158,9 +2158,11 @@ above its floor. Read the decision before allowing any write.
 - [ ] **Step 3: Run for real**
 
 Run: `pnpm tsx src/cli.ts policies/treasury.sepolia.yaml`
-Expected: each adjustment simulated, then broadcast, then polled to
-`verified: true` and `receiptStatus: "success"`. The run record holds the transaction
-hash and link.
+Expected: each adjustment simulated locally against the RPC, then broadcast. The response
+is terminal — KeeperHub re-verifies the receipt against the chain before answering, so
+`success: true` with a `transactionHash` is the confirmation. **There is nothing to poll**;
+the body carries no `executionId`. The run record holds the hash, the link, the gas paid
+and the `sponsored` flag.
 
 - [ ] **Step 4: Verify independently**
 
