@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderReport } from "../../src/report/render.js";
 import { decide } from "../../src/policy/decide.js";
 import type { Address, Adjustment, Facts, Policy } from "../../src/policy/types.js";
-import type { RunRecord } from "../../src/runner/record.js";
+import type { RunEscalation, RunRecord } from "../../src/runner/record.js";
 
 const CRIT = "0x1111111111111111111111111111111111111111" as Address;
 const STD = "0x2222222222222222222222222222222222222222" as Address;
@@ -188,6 +188,32 @@ describe("renderReport", () => {
       ],
     });
     expect(renderReport([explicitlyUnsponsored])).toContain("(not sponsored)");
+  });
+
+  it("renders both a delivered and a failed-to-deliver escalation", () => {
+    const escalations: RunEscalation[] = [
+      { kind: "read-incomplete", detail: "3 chain read(s) failed", delivered: true },
+      { kind: "mandate-rejected", detail: "one or more adjustments were refused", delivered: false },
+    ];
+    const withEscalations = record({ escalations });
+    const html = renderReport([withEscalations]);
+    expect(html).toContain("read-incomplete");
+    expect(html).toContain("3 chain read(s) failed");
+    expect(html).toContain("delivered");
+    expect(html).toContain("mandate-rejected");
+    expect(html).toContain("one or more adjustments were refused");
+    expect(html).toContain("FAILED TO DELIVER");
+  });
+
+  it("stays self-contained even when a run carries escalations: no script, no external stylesheet, no remote image", () => {
+    const escalations: RunEscalation[] = [
+      { kind: "read-incomplete", detail: "3 chain read(s) failed", delivered: true },
+      { kind: "mandate-rejected", detail: "one or more adjustments were refused", delivered: false },
+    ];
+    const html = renderReport([record({ escalations })]);
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("<link");
+    expect(html).not.toContain('src="http');
   });
 
   it("renders the most recent run first regardless of array order", () => {
