@@ -157,16 +157,12 @@ describe("runOnce", () => {
     const matches = record.escalations.filter((e) => e.kind === "write-outcome-unknown");
     expect(matches).toHaveLength(1);
     expect(matches[0]?.detail).toContain("0xdeadbeef");
+    expect(matches[0]?.detail).toContain(DISC);
   });
 
   it("raises no write-outcome-unknown escalation when an unresolved outcome carries no transaction hash", async () => {
     const record = await runOnce(deps({ execute: async () => UNRESOLVED_NO_HASH }), policy(), 1_700_000_000);
     expect(record.escalations.map((e) => e.kind)).not.toContain("write-outcome-unknown");
-  });
-
-  it("still raises mandate-rejected for a refused outcome (no regression)", async () => {
-    const record = await runOnce(deps({ execute: async () => REFUSED }), policy(), 1_700_000_000);
-    expect(record.escalations.map((e) => e.kind)).toContain("mandate-rejected");
   });
 
   it("raises both escalations when a run has a refusal and an unresolved-with-hash outcome", async () => {
@@ -177,7 +173,11 @@ describe("runOnce", () => {
       1_700_000_000,
     );
     expect(record.escalations.map((e) => e.kind)).toContain("mandate-rejected");
-    expect(record.escalations.map((e) => e.kind)).toContain("write-outcome-unknown");
+    // Two adjustments (STD, CRIT) resolve to UNRESOLVED_WITH_HASH here, so this
+    // must produce two distinct write-outcome-unknown escalations, not one
+    // aggregated the way mandate-rejected is -- collapsing them would lose the
+    // per-outcome hash/receiver pairing a reader needs.
+    expect(record.escalations.filter((e) => e.kind === "write-outcome-unknown")).toHaveLength(2);
   });
 
   it("delivers the write-outcome-unknown escalation through the same path, recording delivery failure rather than swallowing it", async () => {
