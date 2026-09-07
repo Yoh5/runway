@@ -1,0 +1,52 @@
+# Runway policy for the live Sepolia demo treasury.
+#
+# `token`, `sender`, `minRunwayHours`, `targetRunwayHours` and `hysteresisHours`
+# were resolved and verified on chain by `pnpm tsx scripts/resolve-sepolia.ts`
+# at block 11656065 on 2026-09-07 (see docs/SETUP.md for the full read-out).
+# Every `committedRateWeiPerSec` / `floorRateWeiPerSec` was produced by
+# `pnpm tsx scripts/plan-streams.ts` from the treasury's live ETH balance at
+# the same block; see docs/SETUP.md for the printed arithmetic.
+#
+# The three recipient addresses are NOT placeholders and NOT real people: they
+# are deliberately unspendable sink addresses (see docs/SETUP.md, "Sink
+# addresses" -- 0x...dEaD is Ethereum's well-known burn address, and the other
+# two extend the same obviously-synthetic hex pattern) so the streamed ETHx is
+# unrecoverable by design, not by accident.
+
+version: 1
+chainId: 11155111
+token: "0x30a6933Ca9230361972E413a15dC8114c952414e" # ETHx, verified: getUnderlyingToken() == 0x0, getHost() matches Superfluid's Sepolia host
+sender: "0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776" # treasury EOA
+minRunwayHours: 72
+targetRunwayHours: 168
+hysteresisHours: 24
+recipients:
+  - address: "0x000000000000000000000000000000000000dEaD"
+    label: "Critical tier (demo sink)"
+    tier: critical
+    committedRateWeiPerSec: "288727524204"
+    # 60% of committed: critical is protected first -- a shed reaches this
+    # tier's floor only after standard and discretionary are already at
+    # theirs.
+    floorRateWeiPerSec: "173236514522"
+  - address: "0x00000000000000000000000000000000dEaDdEaD"
+    label: "Standard tier (demo sink)"
+    tier: standard
+    committedRateWeiPerSec: "173236514522"
+    floorRateWeiPerSec: "0"
+  - address: "0x0000000000000000000000000000dEaDdEaDdEaD"
+    label: "Discretionary tier (demo sink)"
+    tier: discretionary
+    committedRateWeiPerSec: "115491009683"
+    # Non-zero on purpose: a floor of zero means the shed may close this
+    # stream for good. On Superfluid a rate-zero stream does not exist, so
+    # restoring it would require a createFlow call, and the mandate
+    # (permissions: update | delete) deliberately withholds create -- Runway
+    # can never reopen a stream it closed. Keep a non-zero floor on any
+    # stream that must stay restorable.
+    floorRateWeiPerSec: "23098201936"
+escalation:
+  # Not yet a real KeeperHub notification action (spec section 11) -- the
+  # `--dry-run` demo this policy is sized for never calls this webhook.
+  # Replace before running the CLI in write mode on a cadence.
+  webhook: "https://example.invalid/hook"
