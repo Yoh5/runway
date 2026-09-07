@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { readFacts, ReadIncompleteError } from "../../src/chain/reader.js";
+import { CFA_FORWARDER_READ_ABI, SUPER_TOKEN_READ_ABI } from "../../src/chain/abi.js";
 import type { Address, Policy } from "../../src/policy/types.js";
 
 const A = "0x1111111111111111111111111111111111111111" as Address;
@@ -190,5 +193,49 @@ describe("readFacts", () => {
         1_700_000_000,
       ),
     ).rejects.toBeInstanceOf(ReadIncompleteError);
+  });
+});
+
+/**
+ * `tests/fixtures/sepolia-reads.json` records the response shape of three
+ * real reads against Sepolia (per its own `_comment`), confirming the ABI
+ * fragments in `src/chain/abi.ts` are known-good. Per spec section 10
+ * ("reader — recorded fixtures from real Sepolia reads, plus one live read
+ * asserted against the fixture shape."), this asserts the fixture's shape --
+ * the arity of each recorded tuple -- matches what `abi.ts` declares. This
+ * asserts arity only, never a value: the recorded balances and rates go
+ * stale the moment the chain moves, but a tuple's length does not, so this
+ * cannot rot the way a value assertion would.
+ */
+describe("sepolia-reads fixture shape", () => {
+  const fixturePath = fileURLToPath(new URL("../fixtures/sepolia-reads.json", import.meta.url));
+  const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as {
+    chainId: number;
+    blockNumber: number;
+    reads: { contract: string; function?: string; result?: unknown; check?: string }[];
+  };
+
+  function abiOutputCount(functionName: string): number {
+    const fn = [...CFA_FORWARDER_READ_ABI, ...SUPER_TOKEN_READ_ABI].find((f) => f.name === functionName);
+    if (!fn) throw new Error(`no ABI fragment named ${functionName}`);
+    return fn.outputs.length;
+  }
+
+  it("getFlowInfo's recorded result has one element per output the ABI declares", () => {
+    const read = fixture.reads.find((r) => r.function?.startsWith("getFlowInfo"));
+    expect(Array.isArray(read?.result)).toBe(true);
+    const result = read?.result as unknown[];
+    expect(result.length).toBe(abiOutputCount("getFlowInfo"));
+  });
+
+  it("realtimeBalanceOf's recorded result has one element per output the ABI declares", () => {
+    const read = fixture.reads.find((r) => r.function?.startsWith("realtimeBalanceOf"));
+    expect(Array.isArray(read?.result)).toBe(true);
+    const result = read?.result as unknown[];
+    expect(result.length).toBe(abiOutputCount("realtimeBalanceOf"));
+  });
+
+  it("is pinned to Sepolia -- this reader has no other chain to read", () => {
+    expect(fixture.chainId).toBe(11155111);
   });
 });
