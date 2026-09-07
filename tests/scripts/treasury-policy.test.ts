@@ -39,7 +39,7 @@ describe("policies/treasury.sepolia.yaml", () => {
   it("every recipient's rates match scripts/plan-streams.ts's arithmetic for the recorded block-11656065 read", () => {
     const plan = planStreams({
       treasuryEthWei: 601_000_000_000_000_000n,
-      gasReserveWei: 100_000_000_000_000_000n,
+      gasReserveWei: 350_000_000_000_000_000n,
       targetRunwaySec: 168n * 3600n,
       hysteresisSec: 24n * 3600n,
       liquidationPeriodSec: 3600n,
@@ -63,7 +63,7 @@ describe("policies/treasury.sepolia.yaml", () => {
     const policy = loadPolicy(yamlText);
     const committedTotal = policy.recipients.reduce((sum, r) => sum + r.committedRateWeiPerSec, 0n);
     const liquidationPeriodSec = 3600n;
-    const wrapAmountWei = 501_000_000_000_000_000n; // treasuryEthWei - gasReserveWei, recorded in docs/SETUP.md
+    const wrapAmountWei = 251_000_000_000_000_000n; // treasuryEthWei - gasReserveWei, recorded in docs/SETUP.md
     const totalBufferWei = committedTotal * liquidationPeriodSec;
     const runwayAtCommittedSec = (wrapAmountWei - totalBufferWei) / committedTotal;
     expect(runwayAtCommittedSec > policy.targetRunwaySec + policy.hysteresisSec).toBe(true);

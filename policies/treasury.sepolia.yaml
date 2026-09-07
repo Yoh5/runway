@@ -2,10 +2,11 @@
 #
 # `token`, `sender`, `minRunwayHours`, `targetRunwayHours` and `hysteresisHours`
 # were resolved and verified on chain by `pnpm tsx scripts/resolve-sepolia.ts`
-# at block 11656065 on 2026-09-07 (see docs/SETUP.md for the full read-out).
+# at block 11656172 on 2026-09-07 (see docs/SETUP.md for the full read-out).
 # Every `committedRateWeiPerSec` / `floorRateWeiPerSec` was produced by
-# `pnpm tsx scripts/plan-streams.ts` from the treasury's live ETH balance at
-# the same block; see docs/SETUP.md for the printed arithmetic.
+# `pnpm tsx scripts/plan-streams.ts` from the treasury's live ETH balance,
+# read at block 11656171 (same balance, one block earlier); see docs/SETUP.md
+# for the printed arithmetic.
 #
 # The three recipient addresses are NOT placeholders and NOT real people: they
 # are deliberately unspendable sink addresses (see docs/SETUP.md, "Sink
@@ -24,27 +25,27 @@ recipients:
   - address: "0x000000000000000000000000000000000000dEaD"
     label: "Critical tier (demo sink)"
     tier: critical
-    committedRateWeiPerSec: "288727524204"
+    committedRateWeiPerSec: "144651913324"
     # 60% of committed: critical is protected first -- a shed reaches this
     # tier's floor only after standard and discretionary are already at
     # theirs.
-    floorRateWeiPerSec: "173236514522"
+    floorRateWeiPerSec: "86791147994"
   - address: "0x00000000000000000000000000000000dEaDdEaD"
     label: "Standard tier (demo sink)"
     tier: standard
-    committedRateWeiPerSec: "173236514522"
+    committedRateWeiPerSec: "86791147994"
     floorRateWeiPerSec: "0"
   - address: "0x0000000000000000000000000000dEaDdEaDdEaD"
     label: "Discretionary tier (demo sink)"
     tier: discretionary
-    committedRateWeiPerSec: "115491009683"
+    committedRateWeiPerSec: "57860765330"
     # Non-zero on purpose: a floor of zero means the shed may close this
     # stream for good. On Superfluid a rate-zero stream does not exist, so
     # restoring it would require a createFlow call, and the mandate
     # (permissions: update | delete) deliberately withholds create -- Runway
     # can never reopen a stream it closed. Keep a non-zero floor on any
     # stream that must stay restorable.
-    floorRateWeiPerSec: "23098201936"
+    floorRateWeiPerSec: "11572153066"
 escalation:
   # Not yet a real KeeperHub notification action (spec section 11) -- the
   # `--dry-run` demo this policy is sized for never calls this webhook.

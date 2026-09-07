@@ -1,10 +1,11 @@
 # Sepolia setup — the human's runbook
 
-This is the runbook for the one real Sepolia run Runway needs: fund the treasury, open
-three streams, grant KeeperHub's Turnkey EOA a bounded mandate over them, and confirm the
-keeper reads `hold`. **Every signature in this document is signed by a human, in their own
-wallet.** No script here asks for a password, a seed phrase or a private key, and none of
-them holds one. `scripts/check-config.ts` prints presence booleans only.
+This is the runbook for the one real Sepolia run Runway needs: fund the treasury, top up
+KeeperHub's Turnkey EOA so it can pay for its own writes, open three streams, grant that
+EOA a bounded mandate over them, and confirm the keeper reads `hold`. **Every signature in
+this document is signed by a human, in their own wallet.** No script here asks for a
+password, a seed phrase or a private key, and none of them holds one.
+`scripts/check-config.ts` prints presence booleans only.
 
 All figures below were read live from Ethereum Sepolia (chain id `11155111`) on
 **2026-09-07**, and every one of them is asserted by a script before it is printed — see
@@ -65,10 +66,10 @@ pnpm tsx scripts/resolve-sepolia.ts
 
 This reads and **asserts** every fact the rest of this runbook depends on; it stops with a
 named error on a zero address, a revert or a mismatch rather than printing a value nothing
-checked. Actual output, **block 11656087, read 2026-09-07T19:05:04.627Z**:
+checked. Actual output, **block 11656172, read 2026-09-07T19:23:08.086Z**:
 
 ```
-Ethereum Sepolia (chainId 11155111), block 11656087, read at 2026-09-07T19:05:04.627Z
+Ethereum Sepolia (chainId 11155111), block 11656172, read at 2026-09-07T19:23:08.086Z
 
 ETHx.getUnderlyingToken() = 0x0000000000000000000000000000000000000000
 ETHx.getHost() = 0x109412E3C84f0539b43d39dB691B08c90f58dC7c
@@ -81,7 +82,7 @@ Governance.PPPConfiguration(ETHx) = liquidationPeriod 3600s, patricianPeriod 720
 treasury (0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776) ETH balance = 601000000000000000 wei
 treasury ETHx realtimeBalanceOf = available 0 wei, deposit 0 wei, owedDeposit 0 wei
 
-resolve-sepolia: all assertions passed at block 11656087
+resolve-sepolia: all assertions passed at block 11656172
 ```
 
 What this confirms, and why each check exists:
@@ -109,16 +110,16 @@ pnpm tsx scripts/plan-streams.ts
 Pure arithmetic, in `scripts/lib/plan.ts` (unit-tested — see "Testing evidence" below),
 wrapped by `scripts/plan-streams.ts` which reads the treasury's live balance and the live
 liquidation period, then prints every step. Actual output, same treasury balance
-(0.601 ETH had not moved), read again at **block 11656065, 2026-09-07T19:00:44.037Z**:
+(0.601 ETH had not moved), read at **block 11656171, 2026-09-07T19:23:00.038Z**:
 
 ```
-Ethereum Sepolia, block 11656065, read at 2026-09-07T19:00:44.037Z
+Ethereum Sepolia, block 11656171, read at 2026-09-07T19:23:00.038Z
 treasury (0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776) ETH balance = 601000000000000000 wei
 governance liquidation period (ETHx) = 3600s
 
 --- inputs ---
 treasuryEthWei        = 601000000000000000
-gasReserveWei         = 100000000000000000  (kept unwrapped, for the five setup signatures)
+gasReserveWei         = 350000000000000000  (kept unwrapped: treasury gas for the six setup signatures + 0.05 ETH forwarded to the operator EOA)
 targetRunwaySec       = 604800  (168h)
 hysteresisSec         = 86400  (24h)
 liquidationPeriodSec  = 3600  (from governance PPPConfiguration, live)
@@ -128,21 +129,21 @@ tierFloorPercents     = [60, 0, 20]%
 
 --- arithmetic ---
 desiredRunwaySec = (targetRunwaySec + hysteresisSec) * (100 + marginPercent) / 100 = (604800 + 86400) * 125 / 100 = 864000 (240h)
-wrapAmountWei = treasuryEthWei - gasReserveWei = 601000000000000000 - 100000000000000000 = 501000000000000000
-totalCommittedRateWeiPerSec = wrapAmountWei / (desiredRunwaySec + liquidationPeriodSec) = 501000000000000000 / (864000 + 3600) = 577455048409 wei/sec
-  critical      committedRate = 288727524204 wei/sec  floor = 173236514522 wei/sec  buffer = rate * 3600 = 1039419087134400 wei
-  standard      committedRate = 173236514522 wei/sec  floor = 0 wei/sec  buffer = rate * 3600 = 623651452279200 wei
-  discretionary committedRate = 115491009683 wei/sec  floor = 23098201936 wei/sec  buffer = rate * 3600 = 415767634858800 wei
-totalBufferWei = sum(buffers) = 2078838174272400 wei (0.002079 ETH -- affordable against a 0.501 ETH wrap)
-runwayAtCommittedSec = (wrapAmountWei - totalBufferWei) / totalCommittedRateWeiPerSec = (501000000000000000 - 2078838174272400) / 577455048409 = 864000 (240h)
+wrapAmountWei = treasuryEthWei - gasReserveWei = 601000000000000000 - 350000000000000000 = 251000000000000000
+totalCommittedRateWeiPerSec = wrapAmountWei / (desiredRunwaySec + liquidationPeriodSec) = 251000000000000000 / (864000 + 3600) = 289303826648 wei/sec
+  critical      committedRate = 144651913324 wei/sec  floor = 86791147994 wei/sec  buffer = rate * 3600 = 520746887966400 wei
+  standard      committedRate = 86791147994 wei/sec  floor = 0 wei/sec  buffer = rate * 3600 = 312448132778400 wei
+  discretionary committedRate = 57860765330 wei/sec  floor = 11572153066 wei/sec  buffer = rate * 3600 = 208298755188000 wei
+totalBufferWei = sum(buffers) = 1041493775932800 wei (0.001041 ETH -- affordable against a 0.251 ETH wrap)
+runwayAtCommittedSec = (wrapAmountWei - totalBufferWei) / totalCommittedRateWeiPerSec = (251000000000000000 - 1041493775932800) / 289303826648 = 864000 (240h)
 check: runwayAtCommittedSec (864000) > targetRunwaySec + hysteresisSec (691200) -> true
 
 --- result ---
-wrap 501000000000000000 wei ETHx via upgradeByETH() (0.501 ETH)
-critical: committedRateWeiPerSec = "288727524204", floorRateWeiPerSec = "173236514522"
-standard: committedRateWeiPerSec = "173236514522", floorRateWeiPerSec = "0"
-discretionary: committedRateWeiPerSec = "115491009683", floorRateWeiPerSec = "23098201936"
-flowRateAllowance for the mandate (sum of the three committed rates) = 577455048409
+wrap 251000000000000000 wei ETHx via upgradeByETH() (0.251 ETH)
+critical: committedRateWeiPerSec = "144651913324", floorRateWeiPerSec = "86791147994"
+standard: committedRateWeiPerSec = "86791147994", floorRateWeiPerSec = "0"
+discretionary: committedRateWeiPerSec = "57860765330", floorRateWeiPerSec = "11572153066"
+flowRateAllowance for the mandate (sum of the three committed rates) = 289303826648
 ```
 
 **Reading the arithmetic.** `desiredRunwaySec` is set to 25% above
@@ -152,9 +153,11 @@ rounding could tip it into `restore`. The three committed rates split
 `totalCommittedRateWeiPerSec` 5:3:2 (critical : standard : discretionary) — distinct
 enough that a future shed would visibly touch discretionary first, then standard, and
 would very likely never reach critical (critical's floor is 60% of its own committed
-rate). Each stream's buffer (`rate × 3600s`) is a few thousandths of an ETH — negligible
-next to the 0.501 ETH wrapped, and the whole plan leaves 0.1 ETH of the treasury's 0.601
-ETH **unwrapped**, as plain ETH, purely for gas across the five signatures below.
+rate). Each stream's buffer (`rate × 3600s`) is a small fraction of the wrap — negligible
+next to the 0.251 ETH wrapped, and the whole plan leaves 0.35 ETH of the treasury's 0.601
+ETH **unwrapped**, as plain ETH: 0.30 ETH of gas cushion for the six signatures below (see
+"Worst-case gas arithmetic" in section 5) plus the 0.05 ETH that section 5.1 forwards to
+the KeeperHub Turnkey EOA.
 
 These numbers are exactly what `policies/treasury.sepolia.yaml` carries.
 `tests/scripts/treasury-policy.test.ts` reads the committed file back and re-derives it
@@ -179,18 +182,17 @@ in valid hex digits — d, E, a, D). The other two repeat the same obviously-syn
 pattern rather than reusing any address that has ever been observed active on chain, so
 none of the three can plausibly collide with a real, spendable account.
 
-## 5. The five signatures
+## 5. The six signatures
 
-All five transactions below are sent from the **treasury wallet**
+All six transactions below are sent from the **treasury wallet**
 (`0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776`) directly — signed in the treasury's own
 wallet (e.g. MetaMask), not through KeeperHub. Sepolia gas measured 40–105 gwei during
 KeeperHub's own testing (`docs/superpowers/specs/2026-09-06-runway-design.md`, §14); the
-costs below are conservative per-call estimates at the high end of that range, not
-guarantees — check the real estimate your wallet shows before every signature. Summed at
-the very worst case (105 gwei sustained across all five calls: ~0.008 ETH wrap +
-~0.026 ETH × 3 createFlow + ~0.011 ETH mandate ≈ 0.098 ETH) they come close to exhausting
-the 0.1 ETH gas reserve section 3 set aside — if gas is running hot when you get here, top
-the treasury up with a little more Sepolia ETH from a faucet before signing, rather than
+per-call costs noted below are conservative estimates at the high end of that range, not
+guarantees — check the real estimate your wallet shows before every signature. See
+"Worst-case gas arithmetic" just below for the number the 0.35 ETH reserve (section 3) is
+actually sized against — if gas is running unusually hot when you get here, top the
+treasury up with a little more Sepolia ETH from a faucet before signing, rather than
 relying on the reserve exactly covering the worst case.
 
 You can sign each of these through Sepolia Etherscan's "Write Contract" tab (connect the
@@ -200,28 +202,93 @@ commands use `$SEPOLIA_RPC_URL` (already exported in step 0) and `--account
 **you** set — never paste a key into this document, a script, or a conversation with the
 agent that wrote this runbook).
 
-### 5.1 Wrap 0.501 ETH into ETHx
+### Worst-case gas arithmetic
+
+Two wallets pay gas on this run, and each must hold enough to survive the worst case
+Sepolia has actually shown, not the average case.
+
+**105 gwei is not a guess.** KeeperHub's own testing measured Sepolia gas between 40 and
+105 gwei on 2026-07-02, and moved their own CI off live Sepolia because of it
+(`docs/superpowers/specs/2026-09-06-runway-design.md`, section 14, "Known risks"). 105
+gwei is that measured ceiling.
+
+**The treasury wallet** signs all six transactions below: the 0.05 ETH transfer (5.1),
+the wrap (5.2), three `createFlow` calls (5.3–5.5) and the mandate grant (5.6). Budgeting
+a conservative flat 250,000 gas per transaction (real storage writes, not a bare transfer)
+against the 105 gwei ceiling:
+
+```
+6 transactions × 250,000 gas × 105 gwei/gas = 6 × 0.02625 ETH = 0.1575 ETH
+```
+
+against the 0.30 ETH of the 0.35 ETH reserve (section 3) earmarked for treasury gas — the
+reserve's other 0.05 ETH is the transfer's own value in 5.1, not gas. 0.30 ETH covers
+about eleven transactions' worth of headroom at the same rate, roughly double what the six
+calls actually cost.
+
+**The KeeperHub Turnkey EOA** (`0x8060E46C92D65084Ee141A0DEc12C42366cbC050`,
+`$KEEPERHUB_FLOW_OPERATOR_ADDRESS`) pays for its own writes on any route KeeperHub does
+not sponsor — see "Why" in 5.1 below. Up to three `update-flow` calls can land in a single
+tick (one per stream). At the same 250,000 gas / 105 gwei worst case:
+
+```
+3 transactions × 250,000 gas × 105 gwei/gas = 3 × 0.02625 ETH = 0.07875 ETH (≈0.079 ETH)
+```
+
+Before 5.1 that EOA holds `0.05 ETH` on chain (confirmed live at block 11656176) — less
+than the 0.079 ETH worst case, so a hot-gas tick before funding could leave the keeper
+unable to broadcast mid-demonstration. After 5.1's 0.05 ETH transfer it holds `0.10 ETH`,
+clearing the worst case with about 0.021 ETH (roughly 27%) to spare.
+
+### 5.1 Send 0.05 ETH to the KeeperHub Turnkey EOA
+
+- **What**: a plain ETH transfer — **not** a contract call — from the treasury wallet to
+  `0x8060E46C92D65084Ee141A0DEc12C42366cbC050` (`$KEEPERHUB_FLOW_OPERATOR_ADDRESS`), value
+  `0.05` ETH, empty calldata.
+- **Why**: on an unsponsored route, that EOA itself signs, broadcasts and pays for the
+  write — KeeperHub's own documentation calls sponsorship "a condition rather than a
+  guarantee," not something this run can rely on. See "Worst-case gas arithmetic" above:
+  three `update-flow` calls in one tick can cost about 0.079 ETH at 105 gwei, more than
+  the 0.05 ETH the EOA already holds. This transfer brings it to 0.10 ETH before the
+  keeper ever needs it, rather than topping it up after it stalls mid-demonstration.
+- **Costs**: 0.05 ETH (the transfer itself) + gas (a bare transfer, ~21,000 gas — a small
+  fraction of a cent even at 105 gwei).
+
+Etherscan: from the treasury wallet (e.g. MetaMask), send `0.05` ETH directly to
+`0x8060E46C92D65084Ee141A0DEc12C42366cbC050` — no contract, no calldata.
+
+```bash
+cast send 0x8060E46C92D65084Ee141A0DEc12C42366cbC050 \
+  --value 50000000000000000 \
+  --rpc-url "$SEPOLIA_RPC_URL" --account <your-treasury-account>
+```
+
+**Check afterwards**: the EOA's ETH balance (Etherscan, or `cast balance
+0x8060E46C92D65084Ee141A0DEc12C42366cbC050 --rpc-url "$SEPOLIA_RPC_URL"`) shows
+`100000000000000000` wei (0.10 ETH).
+
+### 5.2 Wrap 0.251 ETH into ETHx
 
 - **What**: `upgradeByETH()` on the ETHx SuperToken (`0x30a6933Ca9230361972E413a15dC8114c952414e`), payable, no arguments.
-- **Costs**: 0.501 ETH (the wrap itself) + gas (a native-asset wrap is a light call, well under 0.01 ETH even at 105 gwei).
+- **Costs**: 0.251 ETH (the wrap itself) + gas (a native-asset wrap is a light call, well under 0.01 ETH even at 105 gwei).
 - **Not through KeeperHub**: ETHx has no underlying ERC-20 for KeeperHub's `wrap` action to pull from; this is the direct, payable call.
 
 Etherscan: open the ETHx contract's **Write Contract** tab (if `upgradeByETH` isn't
-listed, use **Write as Proxy** — ETHx is a UUPS proxy). Set `payableAmount` to `0.501`,
+listed, use **Write as Proxy** — ETHx is a UUPS proxy). Set `payableAmount` to `0.251`,
 click **Write**, confirm in your wallet.
 
 ```bash
 cast send 0x30a6933Ca9230361972E413a15dC8114c952414e \
   "upgradeByETH()" \
-  --value 501000000000000000 \
+  --value 251000000000000000 \
   --rpc-url "$SEPOLIA_RPC_URL" --account <your-treasury-account>
 ```
 
 **Check afterwards**: `realtimeBalanceOf(treasury, now)` on ETHx (Read Contract tab, or
-re-run `pnpm tsx scripts/resolve-sepolia.ts`) shows `available ≈ 501000000000000000`
+re-run `pnpm tsx scripts/resolve-sepolia.ts`) shows `available ≈ 251000000000000000`
 (minus a negligible few seconds of any flow already running — none should be, yet).
 
-### 5.2–5.4 Three `createFlow` calls on the CFAv1Forwarder
+### 5.3–5.5 Three `createFlow` calls on the CFAv1Forwarder
 
 - **What**: `createFlow(token, sender, receiver, flowrate, userData)` on the CFAv1Forwarder
   (`0xcfA132E353cB4E398080B9700609bb008eceB125`), once per recipient below.
@@ -235,9 +302,9 @@ re-run `pnpm tsx scripts/resolve-sepolia.ts`) shows `available ≈ 5010000000000
 
 | Call | `token` | `sender` | `receiver` | `flowrate` | `userData` |
 | --- | --- | --- | --- | --- | --- |
-| critical | `0x30a6933Ca9230361972E413a15dC8114c952414e` | `0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776` | `0x000000000000000000000000000000000000dEaD` | `288727524204` | `0x` |
-| standard | `0x30a6933Ca9230361972E413a15dC8114c952414e` | `0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776` | `0x00000000000000000000000000000000dEaDdEaD` | `173236514522` | `0x` |
-| discretionary | `0x30a6933Ca9230361972E413a15dC8114c952414e` | `0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776` | `0x0000000000000000000000000000dEaDdEaDdEaD` | `115491009683` | `0x` |
+| critical | `0x30a6933Ca9230361972E413a15dC8114c952414e` | `0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776` | `0x000000000000000000000000000000000000dEaD` | `144651913324` | `0x` |
+| standard | `0x30a6933Ca9230361972E413a15dC8114c952414e` | `0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776` | `0x00000000000000000000000000000000dEaDdEaD` | `86791147994` | `0x` |
+| discretionary | `0x30a6933Ca9230361972E413a15dC8114c952414e` | `0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776` | `0x0000000000000000000000000000dEaDdEaDdEaD` | `57860765330` | `0x` |
 
 ```bash
 cast send 0xcfA132E353cB4E398080B9700609bb008eceB125 \
@@ -245,18 +312,18 @@ cast send 0xcfA132E353cB4E398080B9700609bb008eceB125 \
   0x30a6933Ca9230361972E413a15dC8114c952414e \
   0xc4faEd0e400911e44fB75E63566BF8AAaF0F7776 \
   0x000000000000000000000000000000000000dEaD \
-  288727524204 0x \
+  144651913324 0x \
   --rpc-url "$SEPOLIA_RPC_URL" --account <your-treasury-account>
-# repeat for standard (173236514522, receiver …dEaDdEaD) and
-# discretionary (115491009683, receiver …dEaDdEaDdEaD)
+# repeat for standard (86791147994, receiver …dEaDdEaD) and
+# discretionary (57860765330, receiver …dEaDdEaDdEaD)
 ```
 
-If any of these three reverts with `CFA_INSUFFICIENT_BALANCE`, the wrap in 5.1 didn't
+If any of these three reverts with `CFA_INSUFFICIENT_BALANCE`, the wrap in 5.2 didn't
 land yet, or landed for less than expected — re-check the ETHx balance before retrying;
 do not lower a rate to make it fit without re-running `scripts/plan-streams.ts`, or
 `policies/treasury.sepolia.yaml` will no longer match what's actually on chain.
 
-### 5.5 Grant the mandate
+### 5.6 Grant the mandate
 
 - **What**: `updateFlowOperatorPermissions(token, flowOperator, permissions, flowrateAllowance)`
   on the CFAv1Forwarder, called by the treasury (so the permission is granted "on behalf of
@@ -266,7 +333,7 @@ do not lower a rate to make it fit without re-running `scripts/plan-streams.ts`,
 - **`permissions = 6`** (`update | delete`, i.e. `2 + 4`) — **deliberately not 7**: the
   agent can throttle and close a stream, and can never create one to an address of its own
   choosing.
-- **`flowrateAllowance = 577455048409`** — the sum of the three committed rates above, so
+- **`flowrateAllowance = 289303826648`** — the sum of the three committed rates above, so
   the agent can restore what was agreed and never exceed it.
 
 | Argument | Value |
@@ -274,14 +341,14 @@ do not lower a rate to make it fit without re-running `scripts/plan-streams.ts`,
 | `token` | `0x30a6933Ca9230361972E413a15dC8114c952414e` |
 | `flowOperator` | `0x8060E46C92D65084Ee141A0DEc12C42366cbC050` (the KeeperHub Turnkey EOA — `$KEEPERHUB_FLOW_OPERATOR_ADDRESS`) |
 | `permissions` | `6` |
-| `flowrateAllowance` | `577455048409` |
+| `flowrateAllowance` | `289303826648` |
 
 ```bash
 cast send 0xcfA132E353cB4E398080B9700609bb008eceB125 \
   "updateFlowOperatorPermissions(address,address,uint8,int96)" \
   0x30a6933Ca9230361972E413a15dC8114c952414e \
   0x8060E46C92D65084Ee141A0DEc12C42366cbC050 \
-  6 577455048409 \
+  6 289303826648 \
   --rpc-url "$SEPOLIA_RPC_URL" --account <your-treasury-account>
 ```
 
@@ -303,7 +370,7 @@ cast call 0xcfA132E353cB4E398080B9700609bb008eceB125 \
   --rpc-url "$SEPOLIA_RPC_URL"
 ```
 
-Expected: `6, 577455048409`. Or on Etherscan: Read Contract → `getFlowOperatorPermissions`
+Expected: `6, 289303826648`. Or on Etherscan: Read Contract → `getFlowOperatorPermissions`
 with `token` = ETHx, `sender` = the treasury, `flowOperator` = the Turnkey EOA.
 
 ## 6. Dry run
@@ -321,7 +388,7 @@ the live chain) but not the meaningful demonstration.
 
 **After section 5** is complete, the same command reads the three real streams at their
 committed rates and an available ETHx balance of roughly
-`501000000000000000 − 2078838174272400 ≈ 498921161825727600` wei (the wrap, minus the
+`251000000000000000 − 1041493775932800 ≈ 249958506224067200` wei (the wrap, minus the
 three buffers, minus whatever few seconds of outflow elapsed between wrapping and
 opening the streams). Expected:
 

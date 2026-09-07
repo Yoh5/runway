@@ -11,7 +11,11 @@ import type { Tier } from "../../src/policy/types.js";
 export type PlanInputs = {
   /** The treasury's whole ETH balance, in wei, read live from the chain. */
   treasuryEthWei: bigint;
-  /** ETH wei kept unwrapped, as a gas cushion for the five setup signatures. */
+  /**
+   * ETH wei kept unwrapped: a gas cushion for the six setup signatures, plus
+   * an amount earmarked to forward to the KeeperHub operator EOA so it can
+   * pay for its own unsponsored writes.
+   */
   gasReserveWei: bigint;
   /** Policy thresholds, already in seconds -- matches `Policy` in src/policy/types.ts. */
   targetRunwaySec: bigint;

@@ -15,17 +15,21 @@ import {
  * Fixed choices this deployment makes; everything else (the balance, the
  * liquidation period) is read live so the plan never goes stale.
  *
- * - 0.1 ETH gas reserve: five Sepolia signatures (wrap, three createFlow,
- *   one grant-flow-operator) cost a small fraction of this even at the
- *   40-105 gwei spikes KeeperHub measured (see docs/superpowers/specs/
- *   2026-09-06-runway-design.md, section 14).
+ * - 0.35 ETH gas reserve: roughly 0.30 ETH of treasury gas -- about eleven
+ *   transactions at the 105 gwei worst case KeeperHub measured (see
+ *   docs/superpowers/specs/2026-09-06-runway-design.md, section 14) -- plus
+ *   0.05 ETH to forward to the operator EOA. That EOA (KeeperHub's Turnkey
+ *   flow operator) signs and pays for its own writes on an unsponsored
+ *   route, so it must be able to cover a full tick unsponsored; see
+ *   docs/SETUP.md, "Worst-case gas arithmetic", for the transaction count
+ *   and totals this reserve is sized against.
  * - 25% margin above targetRunwayHours + hysteresisHours: keeps the first
  *   dry run unambiguously inside "hold" rather than riding the boundary.
  * - Tier weights 5:3:2 and floors 60% / 0% / 20%: distinct, descending
  *   rates with a non-zero discretionary floor (never zero -- see
  *   PlanError's message in scripts/lib/plan.ts for why).
  */
-const GAS_RESERVE_WEI = 100_000_000_000_000_000n; // 0.1 ETH
+const GAS_RESERVE_WEI = 350_000_000_000_000_000n; // 0.35 ETH
 const TARGET_RUNWAY_SEC = 168n * 3600n;
 const HYSTERESIS_SEC = 24n * 3600n;
 const MARGIN_PERCENT = 25n;
@@ -71,7 +75,7 @@ async function main(): Promise<void> {
 
   console.log("--- inputs ---");
   console.log(`treasuryEthWei        = ${inputs.treasuryEthWei}`);
-  console.log(`gasReserveWei         = ${inputs.gasReserveWei}  (kept unwrapped, for the five setup signatures)`);
+  console.log(`gasReserveWei         = ${inputs.gasReserveWei}  (kept unwrapped: treasury gas for the six setup signatures + 0.05 ETH forwarded to the operator EOA)`);
   console.log(`targetRunwaySec       = ${inputs.targetRunwaySec}  (168h)`);
   console.log(`hysteresisSec         = ${inputs.hysteresisSec}  (24h)`);
   console.log(`liquidationPeriodSec  = ${inputs.liquidationPeriodSec}  (from governance PPPConfiguration, live)`);

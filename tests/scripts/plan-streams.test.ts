@@ -6,7 +6,7 @@ import { PlanError, type PlanInputs, planStreams } from "../../scripts/lib/plan.
 function realInputs(): PlanInputs {
   return {
     treasuryEthWei: 601_000_000_000_000_000n, // 0.601 ETH, live treasury balance
-    gasReserveWei: 100_000_000_000_000_000n, // 0.1 ETH kept unwrapped for the five signatures
+    gasReserveWei: 350_000_000_000_000_000n, // 0.35 ETH: ~0.30 ETH treasury gas + 0.05 ETH forwarded to the operator EOA
     targetRunwaySec: 168n * 3600n,
     hysteresisSec: 24n * 3600n,
     liquidationPeriodSec: 3600n, // governance PPPConfiguration, read live
@@ -19,27 +19,27 @@ function realInputs(): PlanInputs {
 describe("planStreams -- the real Sepolia sizing", () => {
   it("matches the hand-computed arithmetic for the actual treasury balance", () => {
     const plan = planStreams(realInputs());
-    expect(plan.wrapAmountWei).toBe(501_000_000_000_000_000n);
+    expect(plan.wrapAmountWei).toBe(251_000_000_000_000_000n);
     expect(plan.streams[0]).toEqual({
       tier: "critical",
-      committedRateWeiPerSec: 288_727_524_204n,
-      floorRateWeiPerSec: 173_236_514_522n,
-      bufferWei: 1_039_419_087_134_400n,
+      committedRateWeiPerSec: 144_651_913_324n,
+      floorRateWeiPerSec: 86_791_147_994n,
+      bufferWei: 520_746_887_966_400n,
     });
     expect(plan.streams[1]).toEqual({
       tier: "standard",
-      committedRateWeiPerSec: 173_236_514_522n,
+      committedRateWeiPerSec: 86_791_147_994n,
       floorRateWeiPerSec: 0n,
-      bufferWei: 623_651_452_279_200n,
+      bufferWei: 312_448_132_778_400n,
     });
     expect(plan.streams[2]).toEqual({
       tier: "discretionary",
-      committedRateWeiPerSec: 115_491_009_683n,
-      floorRateWeiPerSec: 23_098_201_936n,
-      bufferWei: 415_767_634_858_800n,
+      committedRateWeiPerSec: 57_860_765_330n,
+      floorRateWeiPerSec: 11_572_153_066n,
+      bufferWei: 208_298_755_188_000n,
     });
-    expect(plan.totalCommittedRateWeiPerSec).toBe(577_455_048_409n);
-    expect(plan.totalBufferWei).toBe(2_078_838_174_272_400n);
+    expect(plan.totalCommittedRateWeiPerSec).toBe(289_303_826_648n);
+    expect(plan.totalBufferWei).toBe(1_041_493_775_932_800n);
     // The headline requirement: comfortably above targetRunwayHours (168) +
     // hysteresisHours (24) = 192h = 691200s. This lands at exactly the 25%
     // margin the inputs ask for: 240h = 864000s.
