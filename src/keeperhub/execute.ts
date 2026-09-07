@@ -63,7 +63,22 @@ export type ExecutionOutcome =
       sponsored: boolean;
     }
   | { status: "refused"; stage: "simulate" | "broadcast"; detail: string }
-  | { status: "unresolved"; detail: string };
+  | {
+      status: "unresolved";
+      detail: string;
+      /**
+       * Set when the broadcast response carried a `transactionHash` even
+       * though `success` was `false`. KeeperHub's `completeExecution` and
+       * `failExecution` can both report `unconfirmed` this way when a hash
+       * re-verifies as landed on chain -- so a hash here means the outcome is
+       * genuinely unknown, not that nothing happened. Carried as its own
+       * field (not just folded into `detail`'s prose) so a later reader of a
+       * run record -- a human or the reconciler that later settles the row
+       * KeeperHub completes asynchronously -- can find and look up the hash
+       * without parsing free text.
+       */
+      transactionHash?: string;
+    };
 
 const RETRY_INTERVAL_MS = 500;
 
@@ -179,6 +194,24 @@ export async function executeAdjustment(
     if (data.success === false) {
       const parts = [typeof data.error === "string" ? data.error : "broadcast refused"];
       if (typeof data.rejection === "string") parts.push(data.rejection);
+
+      // A transaction hash on a success: false body means a transaction
+      // reached the chain: completeExecution and failExecution can both
+      // report `unconfirmed` this way. Calling that "refused" would tell the
+      // run record no money moved when it may well have -- with no
+      // executionId in the body, this is the only chance to capture the hash
+      // a human or the reconciler will need to look the row up later.
+      if (typeof data.transactionHash === "string") {
+        const hash = data.transactionHash;
+        return {
+          status: "unresolved",
+          transactionHash: hash,
+          detail: safeText(
+            `broadcast reported success: false but transactionHash ${hash} is present -- the write may be on chain despite the failure response: ${parts.join(": ")}`,
+          ),
+        };
+      }
+
       return { status: "refused", stage: "broadcast", detail: safeText(parts.join(": ")) };
     }
 

@@ -192,6 +192,53 @@ describe("executeAdjustment", () => {
     });
   });
 
+  it("reports unresolved rather than refused on success: false when a transactionHash is present (a hash means the transaction reached the chain, and completeExecution/failExecution can both report unconfirmed as success: false)", async () => {
+    const outcome = await executeAdjustment(
+      baseDeps({
+        fetch: stub(
+          [],
+          [[200, { success: false, error: "confirmation timed out", transactionHash: "0xdeadbeef" }]],
+        ),
+      }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(outcome.status).toBe("unresolved");
+    if (outcome.status === "unresolved") {
+      expect(outcome.transactionHash).toBe("0xdeadbeef");
+      expect(outcome.detail).toContain("0xdeadbeef");
+    }
+  });
+
+  it("still refuses on success: false with a non-string transactionHash — that is not a hash a human can look up", async () => {
+    const outcome = await executeAdjustment(
+      baseDeps({
+        fetch: stub([], [[200, { success: false, error: "boom", transactionHash: 12345 }]]),
+      }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(outcome.status).toBe("refused");
+  });
+
+  it("never puts the API key in an unresolved-with-hash outcome", async () => {
+    const outcome = await executeAdjustment(
+      baseDeps({
+        fetch: stub(
+          [],
+          [[200, { success: false, error: "boom kh_test leaked", transactionHash: "0xdeadbeef" }]],
+        ),
+      }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(outcome.status).toBe("unresolved");
+    expect(JSON.stringify(outcome)).not.toContain("kh_test");
+  });
+
   it("retries a 409 idempotency_in_progress with the identical key and lands once it clears", async () => {
     const calls: Call[] = [];
     const sleeps: number[] = [];
