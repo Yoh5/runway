@@ -123,9 +123,11 @@ Both escalations the policy raises follow from the facts alone, which is why it 
 them. `stream-closed-cannot-restore` names a stream an earlier shed took to zero: on
 Superfluid a rate-zero stream does not exist, so raising it again is a `create`, and the
 mandate deliberately withholds that permission. Runway reports the recipient it cannot
-resume paying rather than emitting a call it knows will be refused. `read-incomplete` and `mandate-rejected` are
-run-level escalations raised by the runner and the executor respectively; a pure
-function has no way to know that an RPC timed out or that a mandate was revoked.
+resume paying rather than emitting a call it knows will be refused. `read-incomplete`,
+`mandate-rejected` and `write-outcome-unknown` are run-level escalations raised by the
+runner and the executor respectively; a pure function has no way to know that an RPC
+timed out, that a mandate was revoked, or that a write landed on chain despite a
+failure response.
 
 A decision has exactly one `kind`. It never reduces some streams and restores others in
 the same tick: reducing and restoring answer opposite questions about the same balance,
@@ -277,7 +279,12 @@ cooperative.
   recomputes from facts and finishes.
 - **Execution accepted but never completes.** The run is recorded unresolved. The
   idempotency key prevents a duplicate write when the next tick reaches the same
-  conclusion.
+  conclusion. When the unresolved response carries a transaction hash, the run also
+  raises a `write-outcome-unknown` escalation carrying that hash and the receiver: this
+  is the only error state in which the treasury may already have paid and Runway cannot
+  confirm it, so unlike an ordinary unknown (a socket error before anything was sent,
+  which carries no hash and stays quiet) it is treated with the same urgency as a
+  refusal, not silently deferred to the next tick's reconciliation.
 - **Mandate revoked or allowance exhausted.** The write reverts. Escalate; do not retry
   in a loop.
 - **Escalation itself fails.** Recorded as a run-level failure. A silent breach is the

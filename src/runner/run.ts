@@ -34,6 +34,14 @@ export type RunDeps = {
  * rest: each adjustment only ever moves a rate toward a stated committed
  * value, so each is independently safe, and the next tick recomputes from
  * fresh facts regardless.
+ *
+ * Run-level escalations (raised here or by the executor, distinct from the
+ * two `decide` itself can raise): "read-incomplete" (above), "mandate-
+ * rejected" for a refused write, and "write-outcome-unknown" for an
+ * unresolved write that carries a transaction hash -- the one state in
+ * which the treasury may have paid and this run cannot say whether it did.
+ * An unresolved outcome with no hash (e.g. a socket error before anything
+ * was sent) is an ordinary unknown and does not escalate.
  */
 export async function runOnce(deps: RunDeps, policy: Policy, nowSec: number): Promise<RunRecord> {
   const record: RunRecord = {
@@ -79,6 +87,26 @@ export async function runOnce(deps: RunDeps, policy: Policy, nowSec: number): Pr
     const outcome = await deps.execute(policy, adjustment, nowSec);
     record.outcomes.push({ adjustment, outcome });
     if (outcome.status === "refused") anyRefused = true;
+
+    // An unresolved outcome with a transaction hash means the write may have
+    // reached the chain even though we cannot confirm it -- unlike a plain
+    // refusal (nothing happened) this is the one state where money may have
+    // moved silently, so it escalates on its own, per outcome, carrying the
+    // hash and receiver a human needs to look the transaction up. `detail`
+    // already passed through `executeAdjustment`'s `safeText` (the executor
+    // is the only place holding the API key and RPC URL to redact against),
+    // so composing it in here carries that redaction forward rather than
+    // bypassing it.
+    if (outcome.status === "unresolved" && outcome.transactionHash) {
+      record.escalations.push(
+        await deliverEscalation(
+          deps.notify,
+          policy.escalation.webhook,
+          "write-outcome-unknown",
+          `adjustment for ${adjustment.receiver} is unresolved with transaction hash ${outcome.transactionHash} -- the treasury may have paid and this cannot confirm it: ${outcome.detail}`,
+        ),
+      );
+    }
   }
 
   if (anyRefused) {

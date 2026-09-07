@@ -58,6 +58,15 @@ const LANDED: ExecutionOutcome = {
   sponsored: false,
 };
 const REFUSED: ExecutionOutcome = { status: "refused", stage: "broadcast", detail: "CFA: ACL denied" };
+const UNRESOLVED_WITH_HASH: ExecutionOutcome = {
+  status: "unresolved",
+  transactionHash: "0xdeadbeef",
+  detail: "broadcast reported success: false but transactionHash 0xdeadbeef is present",
+};
+const UNRESOLVED_NO_HASH: ExecutionOutcome = {
+  status: "unresolved",
+  detail: "broadcast request failed: socket hang up",
+};
 
 function deps(over: Partial<RunDeps> = {}): RunDeps {
   return {
@@ -136,6 +145,55 @@ describe("runOnce", () => {
   it("raises a run-level escalation when a write is refused", async () => {
     const record = await runOnce(deps({ execute: async () => REFUSED }), policy(), 1_700_000_000);
     expect(record.escalations.map((e) => e.kind)).toContain("mandate-rejected");
+  });
+
+  it("raises a write-outcome-unknown escalation carrying the hash when an outcome is unresolved with a transaction hash", async () => {
+    let call = 0;
+    const record = await runOnce(
+      deps({ execute: async () => (call++ === 0 ? UNRESOLVED_WITH_HASH : LANDED) }),
+      policy(),
+      1_700_000_000,
+    );
+    const matches = record.escalations.filter((e) => e.kind === "write-outcome-unknown");
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.detail).toContain("0xdeadbeef");
+  });
+
+  it("raises no write-outcome-unknown escalation when an unresolved outcome carries no transaction hash", async () => {
+    const record = await runOnce(deps({ execute: async () => UNRESOLVED_NO_HASH }), policy(), 1_700_000_000);
+    expect(record.escalations.map((e) => e.kind)).not.toContain("write-outcome-unknown");
+  });
+
+  it("still raises mandate-rejected for a refused outcome (no regression)", async () => {
+    const record = await runOnce(deps({ execute: async () => REFUSED }), policy(), 1_700_000_000);
+    expect(record.escalations.map((e) => e.kind)).toContain("mandate-rejected");
+  });
+
+  it("raises both escalations when a run has a refusal and an unresolved-with-hash outcome", async () => {
+    let call = 0;
+    const record = await runOnce(
+      deps({ execute: async () => (call++ === 0 ? REFUSED : UNRESOLVED_WITH_HASH) }),
+      policy(),
+      1_700_000_000,
+    );
+    expect(record.escalations.map((e) => e.kind)).toContain("mandate-rejected");
+    expect(record.escalations.map((e) => e.kind)).toContain("write-outcome-unknown");
+  });
+
+  it("delivers the write-outcome-unknown escalation through the same path, recording delivery failure rather than swallowing it", async () => {
+    const record = await runOnce(
+      deps({
+        execute: async () => UNRESOLVED_WITH_HASH,
+        notify: async () => {
+          throw new Error("webhook 500");
+        },
+      }),
+      policy(),
+      1_700_000_000,
+    );
+    const escalation = record.escalations.find((e) => e.kind === "write-outcome-unknown");
+    expect(escalation).toBeDefined();
+    expect(escalation?.delivered).toBe(false);
   });
 
   it("records a failed escalation rather than swallowing it", async () => {
