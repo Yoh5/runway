@@ -34,7 +34,14 @@ recipients:
     label: "Standard tier (demo sink)"
     tier: standard
     committedRateWeiPerSec: "86791147994"
-    floorRateWeiPerSec: "0"
+    # 25% of committed: non-zero on purpose, same reason as discretionary
+    # below. A zero floor here (this tier's original sizing) meant a shed
+    # that reached standard would close it for good -- Runway's mandate
+    # (permissions: update | delete) can never reopen a rate-zero stream.
+    # Sits between critical's 60% and discretionary's 20% so a shed that
+    # reaches this tier still has real room to cut before critical is
+    # touched.
+    floorRateWeiPerSec: "21697786998"
   - address: "0x0000000000000000000000000000dEaDdEaDdEaD"
     label: "Discretionary tier (demo sink)"
     tier: discretionary

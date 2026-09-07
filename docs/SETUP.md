@@ -110,7 +110,9 @@ pnpm tsx scripts/plan-streams.ts
 Pure arithmetic, in `scripts/lib/plan.ts` (unit-tested — see "Testing evidence" below),
 wrapped by `scripts/plan-streams.ts` which reads the treasury's live balance and the live
 liquidation period, then prints every step. Actual output, same treasury balance
-(0.601 ETH had not moved), read at **block 11656171, 2026-09-07T19:23:00.038Z**:
+(0.601 ETH had not moved), read at **block 11656171, 2026-09-07T19:23:00.038Z**, with the
+standard-tier floor fix applied (`tierFloorPercents` corrected from `[60, 0, 20]` to
+`[60, 25, 20]` the same day — see "Floor correction" below the block):
 
 ```
 Ethereum Sepolia, block 11656171, read at 2026-09-07T19:23:00.038Z
@@ -125,14 +127,14 @@ hysteresisSec         = 86400  (24h)
 liquidationPeriodSec  = 3600  (from governance PPPConfiguration, live)
 marginPercent         = 25%  (above targetRunwaySec + hysteresisSec)
 tierWeights           = [5, 3, 2]  (critical, standard, discretionary)
-tierFloorPercents     = [60, 0, 20]%
+tierFloorPercents     = [60, 25, 20]%
 
 --- arithmetic ---
 desiredRunwaySec = (targetRunwaySec + hysteresisSec) * (100 + marginPercent) / 100 = (604800 + 86400) * 125 / 100 = 864000 (240h)
 wrapAmountWei = treasuryEthWei - gasReserveWei = 601000000000000000 - 350000000000000000 = 251000000000000000
 totalCommittedRateWeiPerSec = wrapAmountWei / (desiredRunwaySec + liquidationPeriodSec) = 251000000000000000 / (864000 + 3600) = 289303826648 wei/sec
   critical      committedRate = 144651913324 wei/sec  floor = 86791147994 wei/sec  buffer = rate * 3600 = 520746887966400 wei
-  standard      committedRate = 86791147994 wei/sec  floor = 0 wei/sec  buffer = rate * 3600 = 312448132778400 wei
+  standard      committedRate = 86791147994 wei/sec  floor = 21697786998 wei/sec  buffer = rate * 3600 = 312448132778400 wei
   discretionary committedRate = 57860765330 wei/sec  floor = 11572153066 wei/sec  buffer = rate * 3600 = 208298755188000 wei
 totalBufferWei = sum(buffers) = 1041493775932800 wei (0.001041 ETH -- affordable against a 0.251 ETH wrap)
 runwayAtCommittedSec = (wrapAmountWei - totalBufferWei) / totalCommittedRateWeiPerSec = (251000000000000000 - 1041493775932800) / 289303826648 = 864000 (240h)
@@ -141,7 +143,7 @@ check: runwayAtCommittedSec (864000) > targetRunwaySec + hysteresisSec (691200) 
 --- result ---
 wrap 251000000000000000 wei ETHx via upgradeByETH() (0.251 ETH)
 critical: committedRateWeiPerSec = "144651913324", floorRateWeiPerSec = "86791147994"
-standard: committedRateWeiPerSec = "86791147994", floorRateWeiPerSec = "0"
+standard: committedRateWeiPerSec = "86791147994", floorRateWeiPerSec = "21697786998"
 discretionary: committedRateWeiPerSec = "57860765330", floorRateWeiPerSec = "11572153066"
 flowRateAllowance for the mandate (sum of the three committed rates) = 289303826648
 ```
@@ -150,20 +152,54 @@ flowRateAllowance for the mandate (sum of the three committed rates) = 289303826
 `targetRunwayHours + hysteresisHours` (168h + 24h = 192h → 240h) precisely so the first
 dry run (step 7) lands unambiguously in `hold`, not on the boundary where integer-division
 rounding could tip it into `restore`. The three committed rates split
-`totalCommittedRateWeiPerSec` 5:3:2 (critical : standard : discretionary) — distinct
-enough that a future shed would visibly touch discretionary first, then standard, and
-would very likely never reach critical (critical's floor is 60% of its own committed
-rate). Each stream's buffer (`rate × 3600s`) is a small fraction of the wrap — negligible
-next to the 0.251 ETH wrapped, and the whole plan leaves 0.35 ETH of the treasury's 0.601
-ETH **unwrapped**, as plain ETH: 0.30 ETH of gas cushion for the six signatures below (see
-"Worst-case gas arithmetic" in section 5) plus the 0.05 ETH that section 5.1 forwards to
-the KeeperHub Turnkey EOA.
+`totalCommittedRateWeiPerSec` 5:3:2 (critical : standard : discretionary) — distinct rates
+that a future budget squeeze sheds in that order (`TIER_ORDER` in
+`src/policy/types.ts`: discretionary, then standard, then critical). Each tier keeps a
+floor sized as a percentage of its own committed rate — 60% / 25% / 20% for critical /
+standard / discretionary — every one non-zero, because on Superfluid a rate-zero stream
+doesn't exist: restoring one would require a `createFlow` the mandate's `permissions: 6`
+(`update | delete`, never `create`) withholds, so a stream a shed can reach must stay
+restorable. Critical keeps the most headroom (60%); discretionary gives up the most (20%);
+standard sits between the two (25%) so a shed reaching it still has real room to cut
+before critical is touched. Each stream's buffer (`rate × 3600s`) is a small fraction of
+the wrap — negligible next to the 0.251 ETH wrapped, and the whole plan leaves 0.35 ETH of
+the treasury's 0.601 ETH **unwrapped**, as plain ETH: 0.30 ETH of gas cushion for the six
+signatures below (see "Worst-case gas arithmetic" in section 5) plus the 0.05 ETH that
+section 5.1 forwards to the KeeperHub Turnkey EOA.
 
 These numbers are exactly what `policies/treasury.sepolia.yaml` carries.
 `tests/scripts/treasury-policy.test.ts` reads the committed file back and re-derives it
 from these same recorded inputs through the same pure `planStreams` function, so a hand
 edit that drifted from this arithmetic would fail `pnpm test`, not surface later as a
 reverted `createFlow`.
+
+**Floor correction (2026-09-07, same day as the block-11656171 read).** Task 9's original
+brief named only the discretionary tier for the non-zero-floor rule in spec section 5, so
+`TIER_FLOOR_PERCENTS` shipped as `[60, 0, 20]` — a zero floor on standard. A zero floor is
+a one-way door: the shed may take that stream to zero, and this mandate can never reopen
+it, so every later restore tick would raise a permanent `stream-closed-cannot-restore`
+escalation for it. Corrected to `[60, 25, 20]`; only `floorRateWeiPerSec` for the standard
+recipient changed (`0` → `21697786998`) — `totalCommittedRateWeiPerSec` and all three
+`committedRateWeiPerSec` values are untouched, since floors are computed from a committed
+rate and never feed back into it (`scripts/lib/plan.ts`). The three `createFlow`
+transactions signed against those committed rates, and the mandate's `flowRateAllowance`
+(their sum), remain valid.
+
+Budget it takes to reach standard: the shed only reaches a tier once every tier before it
+in `TIER_ORDER` is already at its own floor, so standard is touched once
+`need = totalCommittedRateWeiPerSec - budget` exceeds discretionary's reducible range
+(`57860765330 - 11572153066 = 46288612264` wei/sec) — i.e. once
+`budget < 289303826648 - 46288612264 = 243015214384` wei/sec, which at this policy's
+`targetRunwaySec` (604800s) means `availableBalanceWei` below roughly `0.147` ETH, about
+59% of the 0.251 ETH this policy wraps. In practice the bound that matters is tighter
+still: `decide()` only sheds at all once `runwaySec < minRunwaySec` (72h), which for this
+policy's `totalCommittedRateWeiPerSec` requires `availableBalanceWei` below roughly
+`0.075` ETH (about 30% of the wrap) — comfortably under the 0.147 ETH standard-reaching
+threshold, so any tick that sheds at all already reaches standard. Confirmed directly
+against `decide()` and the committed policy in
+`tests/scripts/treasury-policy.test.ts` ("a plausible budget squeeze sheds the standard
+tier down to its floor, never to zero"), using `availableBalanceWei = 0.0502` ETH — 20% of
+the wrap.
 
 ## 4. Sink addresses
 
@@ -408,13 +444,19 @@ executor.
 ## Testing evidence
 
 - `scripts/lib/plan.ts` is pure (no network, no filesystem, no clock) and carries its own
-  regression test against this exact scenario plus five fast-check property suites (1000
+  regression test against this exact scenario plus six fast-check property suites (1000
   runs each) in `tests/scripts/plan-streams.test.ts`, asserting: the runway inequality this
-  whole plan exists to satisfy, buffer affordability, strictly-decreasing tier rates, a
-  strictly-positive discretionary floor, and no floor exceeding its own committed rate.
+  whole plan exists to satisfy, buffer affordability, strictly-decreasing tier rates,
+  strictly-positive floors on every tier (not just discretionary), and no floor exceeding
+  its own committed rate. `planStreams` itself refuses to produce a plan with a zero floor
+  on any tier (`PlanError`, unit-tested for all three), so a future sizing change cannot
+  quietly reintroduce the trap this correction fixes.
 - `tests/scripts/treasury-policy.test.ts` reads `policies/treasury.sepolia.yaml` back and
   checks it against `planStreams` called with the exact inputs recorded in this document —
-  the committed file cannot silently drift from the arithmetic above.
+  the committed file cannot silently drift from the arithmetic above. It also asserts every
+  recipient has a non-zero floor, and that a plausible budget squeeze (`availableBalanceWei`
+  at 20% of the 0.251 ETH wrap) drives `decide()` to shed the standard tier down to its
+  floor without ever reaching zero.
 - `scripts/resolve-sepolia.ts` and `scripts/check-config.ts` talk to the chain and the
   environment respectively, so neither is unit-tested against a mocked chain; their
   correctness is the live output captured verbatim in sections 1–3 above, run against real

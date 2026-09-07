@@ -25,16 +25,23 @@ import {
  *   and totals this reserve is sized against.
  * - 25% margin above targetRunwayHours + hysteresisHours: keeps the first
  *   dry run unambiguously inside "hold" rather than riding the boundary.
- * - Tier weights 5:3:2 and floors 60% / 0% / 20%: distinct, descending
- *   rates with a non-zero discretionary floor (never zero -- see
- *   PlanError's message in scripts/lib/plan.ts for why).
+ * - Tier weights 5:3:2 and floors 60% / 25% / 20%: distinct, descending
+ *   rates, every floor non-zero (never zero on any tier -- see PlanError's
+ *   message in scripts/lib/plan.ts for why). Critical keeps the most
+ *   protection (60%); discretionary gives up the most (20%, the minimum
+ *   this deployment treats as a real floor rather than a rounding error);
+ *   standard sits between the two (25%) so a shed that reaches it still has
+ *   real room to cut before critical is touched, while still landing well
+ *   inside "the shed can visibly reach standard" once a budget squeeze is
+ *   severe enough to breach minRunwayHours (see docs/SETUP.md, "Reading the
+ *   arithmetic").
  */
 const GAS_RESERVE_WEI = 350_000_000_000_000_000n; // 0.35 ETH
 const TARGET_RUNWAY_SEC = 168n * 3600n;
 const HYSTERESIS_SEC = 24n * 3600n;
 const MARGIN_PERCENT = 25n;
 const TIER_WEIGHTS: readonly [bigint, bigint, bigint] = [5n, 3n, 2n];
-const TIER_FLOOR_PERCENTS: readonly [bigint, bigint, bigint] = [60n, 0n, 20n];
+const TIER_FLOOR_PERCENTS: readonly [bigint, bigint, bigint] = [60n, 25n, 20n];
 
 function requireEnv(name: string): string {
   const value = process.env[name];

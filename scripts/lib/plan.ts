@@ -38,9 +38,11 @@ export type PlanInputs = {
   tierWeights: readonly [bigint, bigint, bigint];
   /**
    * Each tier's floor as a percentage of its own committed rate, same order
-   * as `tierWeights`. The discretionary entry must be > 0: a zero floor lets
-   * a shed close that stream for good, and Runway's mandate (permissions:
-   * update | delete, never create) can never reopen it.
+   * as `tierWeights`. Every entry must be > 0: a zero floor lets a shed
+   * close that stream for good, and Runway's mandate (permissions:
+   * update | delete, never create) can never reopen it. This applies to all
+   * three tiers, not just discretionary -- a stream a shed can reach is a
+   * stream that must stay restorable.
    */
   tierFloorPercents: readonly [bigint, bigint, bigint];
 };
@@ -125,11 +127,18 @@ export function planStreams(inputs: PlanInputs): Plan {
     };
   }) as unknown as [PlannedStream, PlannedStream, PlannedStream];
 
-  const discretionaryFloor = streams[2].floorRateWeiPerSec;
-  if (discretionaryFloor <= 0n) {
-    throw new PlanError(
-      "discretionary floor computed as zero -- a shed could close that stream for good and the mandate could never reopen it",
-    );
+  // No tier may end up with a zero floor: a shed could close that stream
+  // for good (Superfluid has no rate-zero stream to restore, and the
+  // mandate withholds `create`), so every tier that must stay restorable
+  // needs tierFloorPercents > 0. This used to check only discretionary;
+  // generalised so a future sizing change can't quietly reintroduce the
+  // trap on any tier.
+  for (const s of streams) {
+    if (s.floorRateWeiPerSec <= 0n) {
+      throw new PlanError(
+        `${s.tier} floor computed as zero -- a shed could close that stream for good and the mandate could never reopen it`,
+      );
+    }
   }
 
   const totalBufferWei = streams.reduce((sum, s) => sum + s.bufferWei, 0n);

@@ -12,7 +12,7 @@ function realInputs(): PlanInputs {
     liquidationPeriodSec: 3600n, // governance PPPConfiguration, read live
     marginPercent: 25n,
     tierWeights: [5n, 3n, 2n],
-    tierFloorPercents: [60n, 0n, 20n],
+    tierFloorPercents: [60n, 25n, 20n],
   };
 }
 
@@ -29,7 +29,7 @@ describe("planStreams -- the real Sepolia sizing", () => {
     expect(plan.streams[1]).toEqual({
       tier: "standard",
       committedRateWeiPerSec: 86_791_147_994n,
-      floorRateWeiPerSec: 0n,
+      floorRateWeiPerSec: 21_697_786_998n,
       bufferWei: 312_448_132_778_400n,
     });
     expect(plan.streams[2]).toEqual({
@@ -60,10 +60,18 @@ describe("planStreams -- the real Sepolia sizing", () => {
 });
 
 describe("planStreams -- errors", () => {
-  it("refuses a discretionary floor of zero", () => {
-    const inputs = { ...realInputs(), tierFloorPercents: [60n, 0n, 0n] as const };
-    expect(() => planStreams(inputs)).toThrow(PlanError);
-    expect(() => planStreams(inputs)).toThrow(/discretionary floor/);
+  it("refuses a zero floor on any tier -- critical, standard, or discretionary", () => {
+    const zeroCritical = { ...realInputs(), tierFloorPercents: [0n, 25n, 20n] as const };
+    expect(() => planStreams(zeroCritical)).toThrow(PlanError);
+    expect(() => planStreams(zeroCritical)).toThrow(/critical floor/);
+
+    const zeroStandard = { ...realInputs(), tierFloorPercents: [60n, 0n, 20n] as const };
+    expect(() => planStreams(zeroStandard)).toThrow(PlanError);
+    expect(() => planStreams(zeroStandard)).toThrow(/standard floor/);
+
+    const zeroDiscretionary = { ...realInputs(), tierFloorPercents: [60n, 25n, 0n] as const };
+    expect(() => planStreams(zeroDiscretionary)).toThrow(PlanError);
+    expect(() => planStreams(zeroDiscretionary)).toThrow(/discretionary floor/);
   });
 
   it("refuses a gas reserve that consumes the whole balance", () => {
@@ -108,9 +116,14 @@ const scenario: fc.Arbitrary<Scenario> = fc.record({
     fc.integer({ min: 2, max: 9 }),
     fc.integer({ min: 1, max: 8 }),
   ),
+  // Min 1, not 0, on every tier: no tier may carry a zero floor (see the
+  // "refuses a zero floor on any tier" test), so drawing from 0 here would
+  // mostly generate adversarial inputs `planStreams` immediately rejects,
+  // instead of exercising the tier-rate and floor arithmetic this suite
+  // wants covered.
   discretionaryFloorPercent: fc.integer({ min: 1, max: 100 }),
-  criticalFloorPercent: fc.integer({ min: 0, max: 100 }),
-  standardFloorPercent: fc.integer({ min: 0, max: 100 }),
+  criticalFloorPercent: fc.integer({ min: 1, max: 100 }),
+  standardFloorPercent: fc.integer({ min: 1, max: 100 }),
 });
 
 function toInputs(s: Scenario): PlanInputs {
@@ -186,7 +199,7 @@ describe("planStreams -- properties over arbitrary balances and thresholds", () 
     );
   });
 
-  it("the discretionary floor is always positive -- a shed can never close it for good", () => {
+  it("every tier's floor is always positive -- a shed can never close any of them for good", () => {
     fc.assert(
       fc.property(scenario, (s) => {
         const inputs = toInputs(s);
@@ -197,7 +210,9 @@ describe("planStreams -- properties over arbitrary balances and thresholds", () 
           if (error instanceof PlanError) return;
           throw error;
         }
-        expect(plan.streams[2].floorRateWeiPerSec).toBeGreaterThan(0n);
+        for (const stream of plan.streams) {
+          expect(stream.floorRateWeiPerSec).toBeGreaterThan(0n);
+        }
       }),
       { numRuns: 1000 },
     );
