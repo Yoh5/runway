@@ -149,6 +149,47 @@ describe("renderReport", () => {
     expect(renderReport([failed])).toMatch(/no action/i);
   });
 
+  it("marks sponsorship unknown rather than 'not sponsored' when the outcome carries no sponsored field", () => {
+    const noSponsoredField = record({
+      outcomes: [
+        {
+          adjustment: adjustment(),
+          outcome: {
+            status: "landed",
+            transactionHash: "0xabc",
+            transactionLink: "https://sepolia.etherscan.io/tx/0xabc",
+            gasUsedWei: "1",
+            effectiveGasPriceWei: "1000000000",
+            // sponsored intentionally omitted: an ordinary protocol-write
+            // response never carries it.
+          },
+        },
+      ],
+    });
+    const html = renderReport([noSponsoredField]);
+    expect(html).toContain("(sponsorship unknown)");
+    expect(html).not.toContain("(not sponsored)");
+  });
+
+  it("still shows '(not sponsored)' when the outcome explicitly says sponsored: false", () => {
+    const explicitlyUnsponsored = record({
+      outcomes: [
+        {
+          adjustment: adjustment(),
+          outcome: {
+            status: "landed",
+            transactionHash: "0xabc",
+            transactionLink: "https://sepolia.etherscan.io/tx/0xabc",
+            gasUsedWei: "1",
+            effectiveGasPriceWei: "1000000000",
+            sponsored: false,
+          },
+        },
+      ],
+    });
+    expect(renderReport([explicitlyUnsponsored])).toContain("(not sponsored)");
+  });
+
   it("renders the most recent run first regardless of array order", () => {
     const older = record({ startedAt: "2026-09-09T00:00:00.000Z" });
     const newer = record({

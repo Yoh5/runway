@@ -70,11 +70,22 @@ function renderOutcomeRow(entry: { adjustment: Adjustment; outcome: ExecutionOut
   const receiver = `<td class="mono">${escapeHtml(adjustment.receiver)}</td>`;
 
   if (outcome.status === "landed") {
+    // `outcome.sponsored` is optional: an ordinary protocol-write response
+    // never carries it at all, only KeeperHub's Turnkey Gas Station path
+    // does. Absent must read as unknown, not as "not sponsored" -- the two
+    // read very differently on an explorer (a sponsored tx shows a sender
+    // that is not our wallet and a value of 0).
+    const sponsorshipNote =
+      outcome.sponsored === true
+        ? ' <span class="muted">(sponsored)</span>'
+        : outcome.sponsored === false
+          ? ' <span class="muted">(not sponsored)</span>'
+          : ' <span class="muted">(sponsorship unknown)</span>';
     return `<tr>${receiver}<td class="status-landed">landed</td><td><a href="${escapeHtml(
       outcome.transactionLink,
-    )}">${escapeHtml(outcome.transactionHash)}</a></td><td>${escapeHtml(outcome.gasUsedWei)} wei gas${
-      outcome.sponsored ? ' <span class="muted">(sponsored)</span>' : ""
-    }</td></tr>`;
+    )}">${escapeHtml(outcome.transactionHash)}</a></td><td>${escapeHtml(
+      outcome.gasUsedWei,
+    )} wei gas cost${sponsorshipNote}</td></tr>`;
   }
 
   if (outcome.status === "refused") {

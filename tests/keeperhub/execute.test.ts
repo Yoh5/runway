@@ -158,6 +158,32 @@ describe("executeAdjustment", () => {
     });
   });
 
+  it("leaves sponsored undefined when an ordinary (non-Turnkey-Gas-Station) response omits it, rather than defaulting to false", async () => {
+    const { sponsored: _omit, ...unsponsoredBody } = LANDED_BODY;
+    const outcome = await executeAdjustment(
+      baseDeps({ fetch: stub([], [[200, unsponsoredBody]]) }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(outcome.status).toBe("landed");
+    if (outcome.status === "landed") {
+      expect(outcome.sponsored).toBeUndefined();
+      expect("sponsored" in outcome).toBe(false);
+    }
+  });
+
+  it("reports sponsored: false as-is when the response explicitly says so", async () => {
+    const outcome = await executeAdjustment(
+      baseDeps({ fetch: stub([], [[200, { ...LANDED_BODY, sponsored: false }]]) }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(outcome.status).toBe("landed");
+    if (outcome.status === "landed") expect(outcome.sponsored).toBe(false);
+  });
+
   it("never reports landed when success is true but transactionHash is missing or non-string", async () => {
     const missingHash = await executeAdjustment(
       baseDeps({ fetch: stub([], [[200, { success: true }]]) }),

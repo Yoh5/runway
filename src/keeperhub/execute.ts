@@ -59,8 +59,15 @@ export type ExecutionOutcome =
        * true means a relayer submitted the transaction: an explorer will show
        * a sender that is not our wallet and a value of 0. Recorded beside the
        * hash so a run record does not look wrong to anyone who checks it.
+       *
+       * Optional, and present only when the response body carried it. An
+       * ordinary protocol-write response never includes this field at all --
+       * it is set only on KeeperHub's Turnkey Gas Station path and on
+       * sponsored failures -- so an absent field means "we were not told",
+       * not "this was not sponsored". Coercing that to `false` would assert
+       * the opposite of the truth to anyone checking the explorer.
        */
-      sponsored: boolean;
+      sponsored?: boolean;
     }
   | { status: "refused"; stage: "simulate" | "broadcast"; detail: string }
   | {
@@ -187,7 +194,9 @@ export async function executeAdjustment(
         gasUsedWei: typeof data.gasUsed === "string" ? data.gasUsed : String(data.gasUsed ?? ""),
         effectiveGasPriceWei:
           typeof data.effectiveGasPrice === "string" ? data.effectiveGasPrice : String(data.effectiveGasPrice ?? ""),
-        sponsored: data.sponsored === true,
+        // Spread in only when the response actually said so: an absent field
+        // must stay absent, not become `false`.
+        ...(typeof data.sponsored === "boolean" ? { sponsored: data.sponsored } : {}),
       };
     }
 
