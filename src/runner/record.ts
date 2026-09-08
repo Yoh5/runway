@@ -88,8 +88,9 @@ function reviveOutcomeEntry(raw: unknown): { adjustment: Adjustment; outcome: Ex
   return {
     adjustment: reviveAdjustment(r.adjustment),
     // ExecutionOutcome carries no bigint field of its own -- gasUsedWei and
-    // effectiveGasPriceWei are already decimal strings on the "landed"
-    // variant -- so it round-trips through JSON with no revival needed.
+    // effectiveGasPriceWei are decimal strings when present on the "landed"
+    // variant (optional: KeeperHub's new response contract reports neither),
+    // so it round-trips through JSON with no revival needed either way.
     outcome: r.outcome as ExecutionOutcome,
   };
 }

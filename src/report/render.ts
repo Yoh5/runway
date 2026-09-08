@@ -81,11 +81,17 @@ function renderOutcomeRow(entry: { adjustment: Adjustment; outcome: ExecutionOut
         : outcome.sponsored === false
           ? ' <span class="muted">(not sponsored)</span>'
           : ' <span class="muted">(sponsorship unknown)</span>';
+    // `outcome.gasUsedWei` is optional for the same reason `sponsored` is:
+    // KeeperHub's new (status-bearing) response contract reports no gas
+    // figures at all. Absent must render as "not reported", never a false
+    // "0 wei gas cost" -- that would claim the write was free.
+    const gasText =
+      outcome.gasUsedWei !== undefined
+        ? `${escapeHtml(outcome.gasUsedWei)} wei gas cost`
+        : `<span class="muted">gas cost not reported</span>`;
     return `<tr>${receiver}<td class="status-landed">landed</td><td><a href="${escapeHtml(
       outcome.transactionLink,
-    )}">${escapeHtml(outcome.transactionHash)}</a></td><td>${escapeHtml(
-      outcome.gasUsedWei,
-    )} wei gas cost${sponsorshipNote}</td></tr>`;
+    )}">${escapeHtml(outcome.transactionHash)}</a></td><td>${gasText}${sponsorshipNote}</td></tr>`;
   }
 
   if (outcome.status === "refused") {

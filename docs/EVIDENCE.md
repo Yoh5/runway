@@ -37,11 +37,21 @@ field as a "no". If this run *was* sponsored, do not read that as a sign anythin
 the explorer will show a sender that is not our wallet and a value of `0`, because a relayer
 paid for it. That is what a sponsored write looks like on-chain, not evidence of a failed one.
 
+**On "Gas paid":** the same "absence means not stated" rule applies here, and it matters more
+on this row than most, because it is no longer the edge case. KeeperHub's original
+(`success`-boolean) response always carried `gasUsed` and `effectiveGasPrice`; the newer
+(`status`-bearing) response `origin/staging` now sends carries **neither** — so on that
+contract, every landed write reports no gas figures at all. `gasUsedWei` and
+`effectiveGasPriceWei` are therefore optional on a landed outcome, and this row quotes
+**"not reported"** whenever either is absent, never `0`: `0` claims the write cost nothing,
+which is a specific and false statement, not the honest "the response did not say".
+
 ## The flow rate, read back off chain
 
 For each stream the shed adjusted, the rate before and after the write — read independently
 with `CFAv1Forwarder.getFlowInfo` against the live chain, **not** taken from KeeperHub's
-response (the response carries no rate field at all; only a hash, a link, and gas figures).
+response (the response carries no rate field at all; only a hash, a link, and — on the
+original response contract, though not the newer one — gas figures).
 
 | Receiver | Rate before (wei/sec) | Rate after (wei/sec) |
 | --- | --- | --- |

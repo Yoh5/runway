@@ -73,8 +73,17 @@ describe("docs/EVIDENCE.md is gated against docs/evidence/run.json", () => {
       expect(doc, `transaction hash for ${who}`).toContain(outcome.transactionHash);
       expect(doc, `explorer link for ${who}`).toContain(outcome.transactionLink);
 
-      const gasPaidWei = (BigInt(outcome.gasUsedWei) * BigInt(outcome.effectiveGasPriceWei)).toString();
-      expect(doc, `gas paid for ${who}`).toContain(gasPaidWei);
+      // Absence must read as "not reported", never coerced to a false zero.
+      // KeeperHub's new (status-bearing) response contract carries no gas
+      // figures at all, so this is the common case there, not an edge one --
+      // `BigInt("")` is `0n`, not a throw, so a naive product here would
+      // silently write "Gas paid: 0" into the document, which reads as "this
+      // transaction was free" when the truth is "the response did not say".
+      const gasPaidText =
+        outcome.gasUsedWei !== undefined && outcome.effectiveGasPriceWei !== undefined
+          ? (BigInt(outcome.gasUsedWei) * BigInt(outcome.effectiveGasPriceWei)).toString()
+          : "not reported";
+      expect(doc, `gas paid for ${who}`).toContain(gasPaidText);
 
       // Absence must read as "not stated", never coerced to "false" -- see
       // docs/EVIDENCE.md's own prose on this, which a sibling test asserts
@@ -124,6 +133,18 @@ describe("docs/EVIDENCE.md is gated against docs/evidence/run.json", () => {
     expect(doc).toMatch(/not\s+stated/i);
     expect(doc).toMatch(/not\s+sponsored/i);
     expect(doc.toLowerCase()).toContain("sender that is not our");
+  });
+
+  it('states in prose that an absent gas figure means "not reported", never a false zero', async () => {
+    const doc = await readFile(EVIDENCE_MD_PATH, "utf8");
+    expect(doc.toLowerCase()).toMatch(/not\s+reported/);
+    // The document must connect that phrase to gas specifically, not just
+    // use it somewhere unrelated. Matched across the paragraph, not just one
+    // line -- the source wraps this prose across several lines of markdown.
+    expect(doc.toLowerCase()).toMatch(/gas[\s\S]{0,400}not\s+reported|not\s+reported[\s\S]{0,400}gas/);
+    // And it must say outright that a false zero is the failure mode being
+    // guarded against -- not merely omit a number silently.
+    expect(doc.toLowerCase()).toMatch(/claims? the write cost nothing|false.{0,20}zero|false.{0,20}"?0"?/);
   });
 
   it("states in prose that a mined receipt proves landing, not that the stream actually changed", async () => {

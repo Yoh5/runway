@@ -216,6 +216,36 @@ describe("renderReport", () => {
     expect(html).not.toContain('src="http');
   });
 
+  it("shows gas cost as 'not reported' rather than a false zero when the outcome carries no gas fields", () => {
+    const noGasFields = record({
+      outcomes: [
+        {
+          adjustment: adjustment(),
+          outcome: {
+            status: "landed",
+            transactionHash: "0xabc",
+            transactionLink: "https://sepolia.etherscan.io/tx/0xabc",
+            // gasUsedWei/effectiveGasPriceWei intentionally omitted: KeeperHub's
+            // new (status-bearing) response contract carries no gas figures at
+            // all. An absent figure must never render as "0 wei gas cost" --
+            // that would claim the write was free, which is not what "not
+            // reported" means.
+            sponsored: false,
+          },
+        },
+      ],
+    });
+    const html = renderReport([noGasFields]);
+    expect(html).toContain("gas cost not reported");
+    expect(html).not.toContain("0 wei gas cost");
+  });
+
+  it("still shows the real gas figure when the outcome carries one", () => {
+    const html = renderReport([record()]);
+    expect(html).toContain("1 wei gas cost");
+    expect(html).not.toContain("gas cost not reported");
+  });
+
   it("renders the most recent run first regardless of array order", () => {
     const older = record({ startedAt: "2026-09-09T00:00:00.000Z" });
     const newer = record({

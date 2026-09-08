@@ -75,8 +75,21 @@ export type ExecutionOutcome =
       status: "landed";
       transactionHash: string;
       transactionLink: string;
-      gasUsedWei: string;
-      effectiveGasPriceWei: string;
+      /**
+       * Decimal wei strings, present only when the response actually
+       * reported them. The old (`success`-boolean) contract always sends
+       * both; KeeperHub's new (`status`-bearing) contract sends neither at
+       * all -- so on that contract this is the common case, not an edge one.
+       * Absent must read as "not reported", never coerced to `"0"`: `"0"` is
+       * a specific, false claim ("this write cost nothing"), and BigInt("")
+       * would silently produce exactly that for anyone computing gas paid
+       * from an unguarded default. Optional for the same reason `sponsored`
+       * is -- so every consumer (the report renderer, the evidence document
+       * and its test) has to decide what "not reported" looks like instead
+       * of being handed a fabricated number.
+       */
+      gasUsedWei?: string;
+      effectiveGasPriceWei?: string;
       /**
        * true means a relayer submitted the transaction: an explorer will show
        * a sender that is not our wallet and a value of 0. Recorded beside the
@@ -245,11 +258,10 @@ export async function executeAdjustment(
           transactionHash: hash,
           transactionLink: typeof data.transactionLink === "string" ? data.transactionLink : "",
           // The new contract's response carries no gas figures at all (see
-          // the type verified against `origin/staging`) -- absent, exactly
-          // like an absent `transactionLink`, defaults to "" rather than
-          // guessing a number KeeperHub never sent.
-          gasUsedWei: "",
-          effectiveGasPriceWei: "",
+          // the type verified against `origin/staging`). Left absent rather
+          // than defaulted to "" -- an empty string is a false "0" once a
+          // consumer runs `BigInt` on it, and this contract not reporting
+          // gas is the common case, not a one-off to paper over.
           contract: "status",
           ...(executionId ? { executionId } : {}),
         };
@@ -322,11 +334,14 @@ export async function executeAdjustment(
         status: "landed",
         transactionHash: data.transactionHash,
         transactionLink: typeof data.transactionLink === "string" ? data.transactionLink : "",
-        gasUsedWei: typeof data.gasUsed === "string" ? data.gasUsed : String(data.gasUsed ?? ""),
-        effectiveGasPriceWei:
-          typeof data.effectiveGasPrice === "string" ? data.effectiveGasPrice : String(data.effectiveGasPrice ?? ""),
-        // Spread in only when the response actually said so: an absent field
-        // must stay absent, not become `false`.
+        // Spread in only when the response actually said so: an absent gas
+        // figure must stay absent -- "not reported", not a false "0" once a
+        // consumer runs BigInt on a defaulted "". The documented old
+        // contract always sends both, but this stays a real string-or-absent
+        // check rather than assuming that.
+        ...(typeof data.gasUsed === "string" ? { gasUsedWei: data.gasUsed } : {}),
+        ...(typeof data.effectiveGasPrice === "string" ? { effectiveGasPriceWei: data.effectiveGasPrice } : {}),
+        // Same treatment: an absent field must stay absent, not become `false`.
         ...(typeof data.sponsored === "boolean" ? { sponsored: data.sponsored } : {}),
         contract: "success",
       };

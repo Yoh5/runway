@@ -456,6 +456,11 @@ describe("executeAdjustment", () => {
         contract: "status",
         executionId: "exec_123",
       });
+      // The new contract reports no gas figures at all -- an absent field
+      // must stay absent here too, not become "" (which a naive BigInt("")
+      // downstream would silently read as a real, zero gas cost).
+      expect("gasUsedWei" in outcome).toBe(false);
+      expect("effectiveGasPriceWei" in outcome).toBe(false);
     });
 
     it("never reports landed on status: completed without a usable transactionHash", async () => {
@@ -488,6 +493,14 @@ describe("executeAdjustment", () => {
       if (outcome.status === "unresolved") {
         expect(outcome.transactionHash).toBe("0xunconfirmed");
         expect(outcome.executionId).toBe("exec_456");
+        // Structurally identical to the catch-all's generic "unrecognised
+        // status" mapping (both return unresolved, spread the same hash and
+        // executionId) -- without this, deleting the explicit `unconfirmed`
+        // branch entirely would leave this test green by accident. Only the
+        // detail text is branch-specific: the catch-all's wording never
+        // says "poll-only", so this pins the assertion to the real branch.
+        expect(outcome.detail).toContain("poll-only");
+        expect(outcome.detail).toContain("must never be treated as a refusal");
       }
     });
 
@@ -502,7 +515,13 @@ describe("executeAdjustment", () => {
       );
       expect(outcome.status).not.toBe("refused");
       expect(outcome.status).toBe("unresolved");
-      if (outcome.status === "unresolved") expect(outcome.transactionHash).toBeUndefined();
+      if (outcome.status === "unresolved") {
+        expect(outcome.transactionHash).toBeUndefined();
+        // Same discrimination concern as the case above: pin to wording only
+        // the explicit `unconfirmed` branch produces.
+        expect(outcome.detail).toContain("poll-only");
+        expect(outcome.detail).toContain("must never be treated as a refusal");
+      }
     });
 
     it("reports unresolved (not refused) on status: failed when a transactionHash is present -- a hash means a transaction reached the chain", async () => {
