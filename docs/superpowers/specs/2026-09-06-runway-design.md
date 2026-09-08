@@ -55,7 +55,7 @@ Everything below was read in the KeeperHub repository, not recalled.
 | Sepolia is a supported chain | `lib/rpc/rpc-config.ts:128` |
 | Direct execution endpoint, API-key authenticated, with idempotency, spending caps, rate and concurrency limits | `app/api/execute/[...slug]/route.ts` |
 | Action type format is `<protocol>/<action-slug>`, e.g. `superfluid/update-flow` | `plugins/protocol/steps/resolve-protocol-meta.ts:14-35` |
-| A protocol write is **synchronous**: the route broadcasts, waits, and re-verifies the receipt against the chain before answering, so `success: true` with a `transactionHash` already carries a checked receipt. The response has no `executionId` and there is nothing to poll | `app/api/execute/[...slug]/route.ts`, `completeExecution` (KEEP-966) |
+| A protocol write is **synchronous**: the route broadcasts, waits, and re-verifies the receipt against the chain before answering — a `202` here still means the write reached the broadcast path, never a queued job. **Two response contracts now exist, and which one a given call gets is conditional, not fixed.** The original: `success: true` with a `transactionHash` already carries a checked receipt, no `executionId`, nothing to poll. `origin/staging` has since replaced it: the body carries `executionId` always, `status: "completed" \| "failed" \| "unconfirmed"` instead of `success`, and `transactionHash` whenever a broadcast hash exists (including on a `"failed"` status — a hash there still means a transaction reached the chain, and `"unconfirmed"` is poll-only and must never be read as a refusal, straight from KeeperHub's own comment on the field). Whether the live deployment at `app.keeperhub.com` has caught up with `staging` was, at last check, unverified — checking costs a real transaction — so the executor recognises both shapes at runtime and records which one answered rather than assuming | `app/api/execute/[...slug]/route.ts` on `origin/staging`, `completeExecution` (KEEP-966); executor handling in `src/keeperhub/execute.ts` |
 | KeeperHub's `simulate` flag is implemented only on `/transfer`, `/contract-call` and `/check-and-execute`. The protocol route ignores it, so sending it would broadcast for real. Simulation is therefore **local**, with viem, before any POST | `app/api/execute/_lib/simulate-flag.ts` and the absence of any `simulate` in the catch-all route |
 
 ### Resolved by reading the chain, never hardcoded from memory
@@ -142,9 +142,14 @@ Depends on: nothing.
 
 Takes adjustments and posts each one to
 `POST /api/execute/superfluid/update-flow` with an idempotency key, and reads the
-terminal response. There is no polling: the route answers only once the
-receipt has been re-verified against the chain, and its body carries no `executionId` to
-poll with.
+terminal response. There is no polling *of this call*: the route answers only once the
+receipt has been re-verified against the chain. What the executor does with that answer is
+now conditional on which response contract it got (§3): the original body carries no
+`executionId` to poll with at all; the newer one always carries an `executionId`, which is
+what makes a *separate*, later `GET /api/execute/{executionId}/status` call reachable —
+useful to a human or reconciler after the fact, not something this call itself waits on. The
+executor recognises both shapes without guessing between them and records which one
+answered on the outcome, so a run record says what it was actually talking to.
 
 Depends on: the KeeperHub API and a `kh_` key held in the environment. Contains no
 policy — it cannot decide to skip, reorder or alter an adjustment.

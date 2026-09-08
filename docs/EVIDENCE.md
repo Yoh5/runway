@@ -50,10 +50,20 @@ response (the response carries no rate field at all; only a hash, a link, and ga
 landed on chain. It does not, by itself, prove the stream it targeted actually changed rate —
 that requires reading the stream's state back off the contract afterwards and comparing it to
 what the decision asked for. KeeperHub's own `completeExecution` already re-verifies the
-receipt before answering, which is why `success: true` with a `transactionHash` is a strong
-signal the write landed; the table above is the second, independent proof that it changed
-what it was supposed to change, obtained the same way KeeperHub's own test suite draws that
-distinction. The two rows above therefore answer two different questions: the transaction
-row answers "did a write reach the chain and get confirmed", and this table answers "did the
-stream's rate actually change" — and both are reported because a reader should not have to
-infer one from the other.
+receipt before answering, which is why a landed outcome — `success: true` with a
+`transactionHash` on the contract this executor was first built against, or `status:
+"completed"` with a `transactionHash` on the response contract KeeperHub's `staging` branch
+now answers with instead — is a strong signal the write landed; the table above is the second,
+independent proof that it changed what it was supposed to change, obtained the same way
+KeeperHub's own test suite draws that distinction. The two rows above therefore answer two
+different questions: the transaction row answers "did a write reach the chain and get
+confirmed", and this table answers "did the stream's rate actually change" — and both are
+reported because a reader should not have to infer one from the other.
+
+**Which response contract this run saw:** the executor recognises both shapes and records
+which one answered (`outcome.contract`, present only when the newer, `status`-bearing
+contract was the one that responded — its absence in a landed outcome means the response
+still used the original `success`-boolean contract). `docs/evidence/run.json` carries
+whichever this run actually got; that is what makes this run's evidence trustworthy even
+though which contract `app.keeperhub.com` serves was, at run time, unverified without
+spending a live transaction.

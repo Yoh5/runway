@@ -415,6 +415,206 @@ describe("executeAdjustment", () => {
     expect(JSON.stringify(outcome)).toContain("[redacted]");
   });
 
+  // -- New KeeperHub contract (staging): the response carries a `status`
+  // field instead of `success`, and always carries `executionId`. Verified
+  // against `app/api/execute/[...slug]/route.ts` on `origin/staging`. Two
+  // things did NOT change: no `simulate` support, and a response still means
+  // the write reached the broadcast path (not a queued job) -- the new
+  // contract just answers 202 instead of 200. Whether the live deployment at
+  // app.keeperhub.com has caught up with `staging` is unknown, so both
+  // shapes must be handled -- see the old-shape tests above, kept untouched.
+  describe("new contract (status field, no success field)", () => {
+    it("reports landed on status: completed with a transactionHash, tagging contract: 'status' and carrying executionId", async () => {
+      const outcome = await executeAdjustment(
+        baseDeps({
+          fetch: stub(
+            [],
+            [
+              [
+                202,
+                {
+                  executionId: "exec_123",
+                  status: "completed",
+                  transactionHash: "0xnew",
+                  transactionLink: "https://sepolia.etherscan.io/tx/0xnew",
+                },
+              ],
+            ],
+          ),
+        }),
+        policy(),
+        adjustment(),
+        NOW,
+      );
+      expect(outcome).toMatchObject({
+        status: "landed",
+        transactionHash: "0xnew",
+        transactionLink: "https://sepolia.etherscan.io/tx/0xnew",
+        contract: "status",
+        executionId: "exec_123",
+      });
+    });
+
+    it("never reports landed on status: completed without a usable transactionHash", async () => {
+      const outcome = await executeAdjustment(
+        baseDeps({
+          fetch: stub([], [[202, { executionId: "exec_x", status: "completed" }]]),
+        }),
+        policy(),
+        adjustment(),
+        NOW,
+      );
+      expect(outcome.status).not.toBe("landed");
+      expect(outcome.status).toBe("unresolved");
+    });
+
+    it("reports unresolved, never refused, on status: unconfirmed -- the transaction may still land, and a caller that treats this as a refusal risks double-broadcasting", async () => {
+      const outcome = await executeAdjustment(
+        baseDeps({
+          fetch: stub(
+            [],
+            [[202, { executionId: "exec_456", status: "unconfirmed", transactionHash: "0xunconfirmed" }]],
+          ),
+        }),
+        policy(),
+        adjustment(),
+        NOW,
+      );
+      expect(outcome.status).not.toBe("refused");
+      expect(outcome.status).toBe("unresolved");
+      if (outcome.status === "unresolved") {
+        expect(outcome.transactionHash).toBe("0xunconfirmed");
+        expect(outcome.executionId).toBe("exec_456");
+      }
+    });
+
+    it("reports unresolved, never refused, on status: unconfirmed even with no transactionHash yet", async () => {
+      const outcome = await executeAdjustment(
+        baseDeps({
+          fetch: stub([], [[202, { executionId: "exec_789", status: "unconfirmed" }]]),
+        }),
+        policy(),
+        adjustment(),
+        NOW,
+      );
+      expect(outcome.status).not.toBe("refused");
+      expect(outcome.status).toBe("unresolved");
+      if (outcome.status === "unresolved") expect(outcome.transactionHash).toBeUndefined();
+    });
+
+    it("reports unresolved (not refused) on status: failed when a transactionHash is present -- a hash means a transaction reached the chain", async () => {
+      const outcome = await executeAdjustment(
+        baseDeps({
+          fetch: stub(
+            [],
+            [
+              [
+                202,
+                {
+                  executionId: "exec_abc",
+                  status: "failed",
+                  transactionHash: "0xfailedhash",
+                  error: "confirmation timed out",
+                },
+              ],
+            ],
+          ),
+        }),
+        policy(),
+        adjustment(),
+        NOW,
+      );
+      expect(outcome.status).toBe("unresolved");
+      if (outcome.status === "unresolved") {
+        expect(outcome.transactionHash).toBe("0xfailedhash");
+        expect(outcome.executionId).toBe("exec_abc");
+        expect(outcome.detail).toContain("0xfailedhash");
+      }
+    });
+
+    it("refuses on status: failed with no transactionHash, folding error into the detail", async () => {
+      const outcome = await executeAdjustment(
+        baseDeps({
+          fetch: stub(
+            [],
+            [
+              [
+                202,
+                {
+                  executionId: "exec_def",
+                  status: "failed",
+                  error: "insufficient allowance",
+                  rejection: "CFA_ACL_NO_SENDER_CREATE_PERMISSIONS",
+                },
+              ],
+            ],
+          ),
+        }),
+        policy(),
+        adjustment(),
+        NOW,
+      );
+      expect(outcome.status).toBe("refused");
+      if (outcome.status === "refused") {
+        expect(outcome.contract).toBe("status");
+        expect(outcome.executionId).toBe("exec_def");
+        expect(outcome.detail).toContain("insufficient allowance");
+      }
+    });
+
+    it("never puts the API key or RPC URL in a new-shape (status: failed) refused outcome", async () => {
+      const outcome = await executeAdjustment(
+        baseDeps({
+          rpcUrl: "https://eth-sepolia.g.alchemy.com/v2/sk-fake-should-not-leak",
+          fetch: stub(
+            [],
+            [
+              [
+                202,
+                {
+                  executionId: "exec_leak",
+                  status: "failed",
+                  error: "boom kh_test leaked, also https://eth-sepolia.g.alchemy.com/v2/sk-fake-should-not-leak",
+                },
+              ],
+            ],
+          ),
+        }),
+        policy(),
+        adjustment(),
+        NOW,
+      );
+      expect(outcome.status).toBe("refused");
+      expect(JSON.stringify(outcome)).not.toContain("kh_test");
+      expect(JSON.stringify(outcome)).not.toContain("sk-fake-should-not-leak");
+    });
+
+    it("never reports landed on an unrecognised status value", async () => {
+      const outcome = await executeAdjustment(
+        baseDeps({
+          fetch: stub([], [[202, { executionId: "exec_weird", status: "pending" }]]),
+        }),
+        policy(),
+        adjustment(),
+        NOW,
+      );
+      expect(outcome.status).not.toBe("landed");
+      expect(outcome.status).toBe("unresolved");
+    });
+  });
+
+  it("tags no contract field on old-shape (success-based) outcomes -- the compatibility guarantee keeps their shape byte-identical", async () => {
+    const outcome = await executeAdjustment(
+      baseDeps({ fetch: stub([], [[200, LANDED_BODY]]) }),
+      policy(),
+      adjustment(),
+      NOW,
+    );
+    expect(outcome.status).toBe("landed");
+    expect("contract" in outcome).toBe(false);
+    expect("executionId" in outcome).toBe(false);
+  });
+
   it("never puts the API key in any outcome", async () => {
     const outcomes = await Promise.all([
       executeAdjustment(
@@ -434,6 +634,20 @@ describe("executeAdjustment", () => {
           fetch: (async () => {
             throw new Error("socket error, key kh_test leaked in a naive implementation");
           }) as typeof globalThis.fetch,
+        }),
+        policy(),
+        adjustment(),
+        NOW,
+      ),
+      // New contract's failure shape (status: "failed", no hash): extended
+      // here per the controller's instruction to cover the new paths with
+      // this same planted-secret check, not just the old-shape ones above.
+      executeAdjustment(
+        baseDeps({
+          fetch: stub(
+            [],
+            [[202, { executionId: "exec_planted", status: "failed", error: "boom kh_test leaked" }]],
+          ),
         }),
         policy(),
         adjustment(),

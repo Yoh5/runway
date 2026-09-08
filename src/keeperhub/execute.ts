@@ -48,6 +48,25 @@ export type ExecutorDeps = {
   sleep: (ms: number) => Promise<void>;
 };
 
+/**
+ * Which KeeperHub response contract this outcome was actually mapped from.
+ * `"success"` is the boolean-`success` shape the route answered with when
+ * this executor was first written; `"status"` is the explicit
+ * `"completed" | "failed" | "unconfirmed"` state KeeperHub's `staging`
+ * branch switched to (`app/api/execute/[...slug]/route.ts`), dropping
+ * `success` entirely. We do not know whether the live deployment has caught
+ * up with `staging`, so both are handled and this field records which one a
+ * given call actually saw -- if the two ever diverge again, this is what
+ * tells a reader when.
+ *
+ * Deliberately absent (not `"success"`) on every outcome the old-shape
+ * branch produces: that branch's behaviour -- including its exact returned
+ * shape -- is the compatibility guarantee for callers written against the
+ * pre-existing contract, so it stays byte-for-byte unchanged rather than
+ * growing a new field. Only the new (`"status"`) branch tags itself.
+ */
+export type ResponseContract = "status" | "success";
+
 export type ExecutionOutcome =
   | {
       status: "landed";
@@ -68,23 +87,45 @@ export type ExecutionOutcome =
        * the opposite of the truth to anyone checking the explorer.
        */
       sponsored?: boolean;
+      /** See `ResponseContract`. Present only on the new-shape branch. */
+      contract?: ResponseContract;
+      /**
+       * KeeperHub's execution id, present whenever the new contract's
+       * response carried one. This is what makes
+       * `GET /api/execute/{executionId}/status` reachable, and lets a human
+       * reading a run record find the row on KeeperHub's side. The old
+       * contract never sent one, so this stays absent there.
+       */
+      executionId?: string;
     }
-  | { status: "refused"; stage: "simulate" | "broadcast"; detail: string }
+  | {
+      status: "refused";
+      stage: "simulate" | "broadcast";
+      detail: string;
+      contract?: ResponseContract;
+      executionId?: string;
+    }
   | {
       status: "unresolved";
       detail: string;
       /**
        * Set when the broadcast response carried a `transactionHash` even
-       * though `success` was `false`. KeeperHub's `completeExecution` and
-       * `failExecution` can both report `unconfirmed` this way when a hash
-       * re-verifies as landed on chain -- so a hash here means the outcome is
-       * genuinely unknown, not that nothing happened. Carried as its own
-       * field (not just folded into `detail`'s prose) so a later reader of a
-       * run record -- a human or the reconciler that later settles the row
-       * KeeperHub completes asynchronously -- can find and look up the hash
-       * without parsing free text.
+       * though the outcome could not be confirmed -- on the old contract,
+       * that meant `success: false` with a hash anyway (KeeperHub's
+       * `completeExecution` and `failExecution` can both report
+       * `unconfirmed` this way when a hash re-verifies as landed on chain);
+       * on the new contract, that is `status: "unconfirmed"` (with or
+       * without a hash yet) or `status: "failed"` with a hash. Either way a
+       * hash here means the outcome is genuinely unknown, not that nothing
+       * happened. Carried as its own field (not just folded into `detail`'s
+       * prose) so a later reader of a run record -- a human or the
+       * reconciler that later settles the row KeeperHub completes
+       * asynchronously -- can find and look up the hash without parsing
+       * free text.
        */
       transactionHash?: string;
+      contract?: ResponseContract;
+      executionId?: string;
     };
 
 const RETRY_INTERVAL_MS = 500;
@@ -183,6 +224,93 @@ export async function executeAdjustment(
         detail: safeText(
           `idempotency key already resolved a different broadcast (original execution: ${original}); rotating the key here could double-send`,
         ),
+      };
+    }
+
+    // New contract (KeeperHub `staging`, `app/api/execute/[...slug]/route.ts`):
+    // the body carries a `status` field and never a `success` field. Checked
+    // before the old-shape logic below so a `status`-bearing body never
+    // falls into it -- `success` and `status` are mutually exclusive on the
+    // two contracts, so this dispatch never has to guess between them.
+    if (typeof data.status === "string") {
+      const executionId = typeof data.executionId === "string" ? data.executionId : undefined;
+      const hash = typeof data.transactionHash === "string" ? data.transactionHash : undefined;
+
+      if (data.status === "completed" && hash !== undefined) {
+        return {
+          status: "landed",
+          transactionHash: hash,
+          transactionLink: typeof data.transactionLink === "string" ? data.transactionLink : "",
+          // The new contract's response carries no gas figures at all (see
+          // the type verified against `origin/staging`) -- absent, exactly
+          // like an absent `transactionLink`, defaults to "" rather than
+          // guessing a number KeeperHub never sent.
+          gasUsedWei: "",
+          effectiveGasPriceWei: "",
+          contract: "status",
+          ...(executionId ? { executionId } : {}),
+        };
+      }
+
+      if (data.status === "unconfirmed") {
+        // Poll-only, per KeeperHub's own comment on this response: the
+        // transaction may still land. Reporting this as "refused" is exactly
+        // the failure we reported to them -- a caller that treats any error
+        // string as terminal would rotate the idempotency key and
+        // double-broadcast a transaction that may still land. Never refused.
+        return {
+          status: "unresolved",
+          contract: "status",
+          ...(hash !== undefined ? { transactionHash: hash } : {}),
+          ...(executionId ? { executionId } : {}),
+          detail: safeText(
+            `broadcast status "unconfirmed"${hash !== undefined ? ` (transactionHash ${hash})` : " (no transactionHash yet)"} -- this is poll-only, the write may still land, and it must never be treated as a refusal${executionId ? ` (executionId ${executionId})` : ""}`,
+          ),
+        };
+      }
+
+      if (data.status === "failed") {
+        const parts = [typeof data.error === "string" ? data.error : "broadcast failed"];
+        if (typeof data.rejection === "string") parts.push(data.rejection);
+        if (typeof data.errorClass === "string") parts.push(data.errorClass);
+
+        // A transaction hash on a "failed" status means a transaction still
+        // reached the chain -- exactly the old contract's success: false
+        // + hash case, just spelled with an explicit status now. Calling
+        // this "refused" would tell the run record no money moved when it
+        // may well have.
+        if (hash !== undefined) {
+          return {
+            status: "unresolved",
+            transactionHash: hash,
+            contract: "status",
+            ...(executionId ? { executionId } : {}),
+            detail: safeText(
+              `broadcast status "failed" but transactionHash ${hash} is present -- the write may be on chain despite the failure response: ${parts.join(": ")}`,
+            ),
+          };
+        }
+
+        return {
+          status: "refused",
+          stage: "broadcast",
+          contract: "status",
+          ...(executionId ? { executionId } : {}),
+          detail: safeText(parts.join(": ")),
+        };
+      }
+
+      // A `status` value outside the three KeeperHub documents (or
+      // "completed" without a usable hash) is not a state this executor
+      // knows how to act on. Unresolved, never landed -- guessing here is
+      // exactly what would misreport an outcome against a contract we do
+      // not fully recognise.
+      return {
+        status: "unresolved",
+        contract: "status",
+        ...(hash !== undefined ? { transactionHash: hash } : {}),
+        ...(executionId ? { executionId } : {}),
+        detail: safeText(`unrecognised status ${JSON.stringify(data.status)} in a new-contract broadcast response`),
       };
     }
 

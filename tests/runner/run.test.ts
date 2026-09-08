@@ -67,6 +67,20 @@ const UNRESOLVED_NO_HASH: ExecutionOutcome = {
   status: "unresolved",
   detail: "broadcast request failed: socket hang up",
 };
+// Shaped exactly as `executeAdjustment` now returns a `status: "unconfirmed"`
+// response on KeeperHub's new contract (`src/keeperhub/execute.ts`): still
+// `status: "unresolved"` with a `transactionHash`, plus `contract` and
+// `executionId`. `runOnce` only ever looks at `outcome.status` and
+// `outcome.transactionHash`, so this must escalate exactly like
+// UNRESOLVED_WITH_HASH above -- proving the escalation is not accidentally
+// keyed to the old contract's shape.
+const UNRESOLVED_NEW_CONTRACT_UNCONFIRMED: ExecutionOutcome = {
+  status: "unresolved",
+  transactionHash: "0xnewcontractunconfirmed",
+  contract: "status",
+  executionId: "exec_unconfirmed_1",
+  detail: 'broadcast status "unconfirmed" (transactionHash 0xnewcontractunconfirmed) -- this is poll-only, the write may still land',
+};
 
 function deps(over: Partial<RunDeps> = {}): RunDeps {
   return {
@@ -157,6 +171,19 @@ describe("runOnce", () => {
     const matches = record.escalations.filter((e) => e.kind === "write-outcome-unknown");
     expect(matches).toHaveLength(1);
     expect(matches[0]?.detail).toContain("0xdeadbeef");
+    expect(matches[0]?.detail).toContain(DISC);
+  });
+
+  it("raises a write-outcome-unknown escalation for the new contract's status: 'unconfirmed' outcome, carrying the hash", async () => {
+    let call = 0;
+    const record = await runOnce(
+      deps({ execute: async () => (call++ === 0 ? UNRESOLVED_NEW_CONTRACT_UNCONFIRMED : LANDED) }),
+      policy(),
+      1_700_000_000,
+    );
+    const matches = record.escalations.filter((e) => e.kind === "write-outcome-unknown");
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.detail).toContain("0xnewcontractunconfirmed");
     expect(matches[0]?.detail).toContain(DISC);
   });
 
