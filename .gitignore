@@ -6,3 +6,6 @@ dist/
 coverage/
 *.log
 runs/
+
+# Internal demo runbook (Word), not part of the deliverable
+docs/demonstration-runway.docx

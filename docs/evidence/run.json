@@ -1,0 +1,127 @@
+{
+  "startedAt": "2026-09-08T22:39:55.519Z",
+  "nowSec": 1788907195,
+  "facts": {
+    "nowSec": 1788907195,
+    "availableBalanceWei": "24431708160423600",
+    "depositWei": "1041499504508928",
+    "streams": [
+      {
+        "receiver": "0x000000000000000000000000000000000000dead",
+        "flowRateWeiPerSec": "144651913324"
+      },
+      {
+        "receiver": "0x00000000000000000000000000000000deaddead",
+        "flowRateWeiPerSec": "86791147994"
+      },
+      {
+        "receiver": "0x0000000000000000000000000000deaddeaddead",
+        "flowRateWeiPerSec": "57860765330"
+      }
+    ],
+    "unlistedOutflowWeiPerSec": "0"
+  },
+  "decision": {
+    "kind": "reduce",
+    "runwaySec": "84450",
+    "breach": true,
+    "adjustments": [
+      {
+        "receiver": "0x0000000000000000000000000000deaddeaddead",
+        "fromRateWeiPerSec": "57860765330",
+        "toRateWeiPerSec": "11572153066",
+        "reason": "budget-shed"
+      },
+      {
+        "receiver": "0x00000000000000000000000000000000deaddead",
+        "fromRateWeiPerSec": "86791147994",
+        "toRateWeiPerSec": "21697786998",
+        "reason": "budget-shed"
+      },
+      {
+        "receiver": "0x000000000000000000000000000000000000dead",
+        "fromRateWeiPerSec": "144651913324",
+        "toRateWeiPerSec": "86791147994",
+        "reason": "budget-shed"
+      }
+    ],
+    "escalation": {
+      "kind": "floors-exceed-budget",
+      "detail": "79664745201 wei/sec above budget after every floor was reached"
+    }
+  },
+  "outcomes": [
+    {
+      "adjustment": {
+        "receiver": "0x0000000000000000000000000000deaddeaddead",
+        "fromRateWeiPerSec": "57860765330",
+        "toRateWeiPerSec": "11572153066",
+        "reason": "budget-shed"
+      },
+      "outcome": {
+        "status": "landed",
+        "transactionHash": "0xc58483cd49462cb70e92859ce3518d10d2e6a2a7e39aaddf6f9c04af0a200d5a",
+        "transactionLink": "https://sepolia.etherscan.io/tx/0xc58483cd49462cb70e92859ce3518d10d2e6a2a7e39aaddf6f9c04af0a200d5a",
+        "contract": "status",
+        "executionId": "jfh65mb9b66lvr29e4x8n"
+      }
+    },
+    {
+      "adjustment": {
+        "receiver": "0x00000000000000000000000000000000deaddead",
+        "fromRateWeiPerSec": "86791147994",
+        "toRateWeiPerSec": "21697786998",
+        "reason": "budget-shed"
+      },
+      "outcome": {
+        "status": "landed",
+        "transactionHash": "0x39c9773b806775cf2a6597258b10463117eec1a03fcb854817fbe3d4661e9f99",
+        "transactionLink": "https://sepolia.etherscan.io/tx/0x39c9773b806775cf2a6597258b10463117eec1a03fcb854817fbe3d4661e9f99",
+        "contract": "status",
+        "executionId": "lxpc3ldr7uytz59iifrtv"
+      }
+    },
+    {
+      "adjustment": {
+        "receiver": "0x000000000000000000000000000000000000dead",
+        "fromRateWeiPerSec": "144651913324",
+        "toRateWeiPerSec": "86791147994",
+        "reason": "budget-shed"
+      },
+      "outcome": {
+        "status": "landed",
+        "transactionHash": "0xfe79cb4a00f8a98030e89e4183d598876f2413934aab495115a056cabd99da66",
+        "transactionLink": "https://sepolia.etherscan.io/tx/0xfe79cb4a00f8a98030e89e4183d598876f2413934aab495115a056cabd99da66",
+        "contract": "status",
+        "executionId": "szjissksuwurvg3ert7f1"
+      }
+    }
+  ],
+  "escalations": [
+    {
+      "kind": "floors-exceed-budget",
+      "detail": "79664745201 wei/sec above budget after every floor was reached",
+      "delivered": false
+    }
+  ],
+  "evidence": {
+    "blockNumber": "11663965",
+    "verifiedRates": [
+      {
+        "receiver": "0x0000000000000000000000000000deaddeaddead",
+        "beforeWeiPerSec": "57860765330",
+        "afterWeiPerSec": "11572153066"
+      },
+      {
+        "receiver": "0x00000000000000000000000000000000deaddead",
+        "beforeWeiPerSec": "86791147994",
+        "afterWeiPerSec": "21697786998"
+      },
+      {
+        "receiver": "0x000000000000000000000000000000000000dead",
+        "beforeWeiPerSec": "144651913324",
+        "afterWeiPerSec": "86791147994"
+      }
+    ]
+  }
+}

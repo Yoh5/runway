@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runway report</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #0b0d10;
+    color: #e6e6e6;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+  h2 { font-size: 1.1rem; margin: 2rem 0 0.75rem; border-bottom: 1px solid #2a2e33; padding-bottom: 0.4rem; }
+  h3 { font-size: 1rem; margin: 0 0 0.5rem; }
+  section.run {
+    border: 1px solid #2a2e33;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+    background: #14171b;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 1px solid #2a2e33; vertical-align: top; }
+  th { color: #9aa3ad; font-weight: 600; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.85em; }
+  a { color: #6cb6ff; }
+  .muted { color: #9aa3ad; }
+  .badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: #2a2e33;
+  }
+  .badge-hold { background: #234a2e; color: #7be08f; }
+  .badge-reduce { background: #4a2323; color: #ff8f8f; }
+  .badge-restore { background: #23364a; color: #8fbcff; }
+  .badge-unknown { background: #4a4423; color: #e0d47b; }
+  .badge-breach { background: #4a2323; color: #ff8f8f; }
+  .status-landed { color: #7be08f; }
+  .status-refused { color: #ff8f8f; }
+  .status-unresolved { color: #e0d47b; }
+  .summary-grid { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .summary-item .label { color: #9aa3ad; font-size: 0.8rem; display: block; }
+  .summary-item .value { font-size: 1.3rem; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Runway report</h1>
+<div class="summary-grid">
+    <div class="summary-item"><span class="label">Latest run</span><span class="value">2026-09-08T22:39:55.519Z</span></div>
+    <div class="summary-item"><span class="label">Runway</span><span class="value">23h 27m 30s</span></div>
+    <div class="summary-item"><span class="label">Decision</span><span class="value"><span class="badge badge-reduce">reduce</span> <span class="badge badge-breach">breach</span></span></div>
+  </div>
+<h2>Run history (most recent first)</h2>
+<section class="run">
+  <h3>2026-09-08T22:39:55.519Z</h3>
+  <div class="summary-grid">
+    <div class="summary-item"><span class="label">Decision</span><span class="value"><span class="badge badge-reduce">reduce</span> <span class="badge badge-breach">breach</span></span></div>
+    <div class="summary-item"><span class="label">Runway</span><span class="value">23h 27m 30s</span></div>
+  </div>
+  <table>
+  <thead><tr><th>Receiver</th><th>Rate this run</th><th>Adjustment</th></tr></thead>
+  <tbody><tr><td class="mono">0x000000000000000000000000000000000000dead</td><td>144651913324 wei/sec</td><td>144651913324 &rarr; 86791147994 <span class="muted">(budget-shed)</span></td></tr><tr><td class="mono">0x00000000000000000000000000000000deaddead</td><td>86791147994 wei/sec</td><td>86791147994 &rarr; 21697786998 <span class="muted">(budget-shed)</span></td></tr><tr><td class="mono">0x0000000000000000000000000000deaddeaddead</td><td>57860765330 wei/sec</td><td>57860765330 &rarr; 11572153066 <span class="muted">(budget-shed)</span></td></tr></tbody>
+</table>
+  <table>
+  <thead><tr><th>Receiver</th><th>Status</th><th colspan="2">Result</th></tr></thead>
+  <tbody><tr><td class="mono">0x0000000000000000000000000000deaddeaddead</td><td class="status-landed">landed</td><td><a href="https://sepolia.etherscan.io/tx/0xc58483cd49462cb70e92859ce3518d10d2e6a2a7e39aaddf6f9c04af0a200d5a">0xc58483cd49462cb70e92859ce3518d10d2e6a2a7e39aaddf6f9c04af0a200d5a</a></td><td><span class="muted">gas cost not reported</span> <span class="muted">(sponsorship unknown)</span></td></tr><tr><td class="mono">0x00000000000000000000000000000000deaddead</td><td class="status-landed">landed</td><td><a href="https://sepolia.etherscan.io/tx/0x39c9773b806775cf2a6597258b10463117eec1a03fcb854817fbe3d4661e9f99">0x39c9773b806775cf2a6597258b10463117eec1a03fcb854817fbe3d4661e9f99</a></td><td><span class="muted">gas cost not reported</span> <span class="muted">(sponsorship unknown)</span></td></tr><tr><td class="mono">0x000000000000000000000000000000000000dead</td><td class="status-landed">landed</td><td><a href="https://sepolia.etherscan.io/tx/0xfe79cb4a00f8a98030e89e4183d598876f2413934aab495115a056cabd99da66">0xfe79cb4a00f8a98030e89e4183d598876f2413934aab495115a056cabd99da66</a></td><td><span class="muted">gas cost not reported</span> <span class="muted">(sponsorship unknown)</span></td></tr></tbody>
+</table>
+  <h3>Escalations</h3><ul><li><span class="status-refused">FAILED TO DELIVER</span> — floors-exceed-budget: 79664745201 wei/sec above budget after every floor was reached</li></ul>
+</section>
+</body>
+</html>
