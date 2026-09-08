@@ -21,13 +21,19 @@ node --version   # tested on Node 22+
 pnpm install
 ```
 
-Export the four Sepolia setup variables (from `.env`, not committed) into your shell, then
-confirm they're present without ever printing them:
+Fill in `.env` (copy `.env.example`; it is not committed), then confirm the four Sepolia
+setup variables are present without ever printing them:
 
 ```bash
-set -a && source .env && set +a
-pnpm tsx scripts/check-config.ts
+pnpm check-config
 ```
+
+Every command in this runbook that touches the chain or KeeperHub is a `package.json`
+script that runs `node --env-file=.env`, so `.env` is loaded for you and the same command
+works in bash and in PowerShell. Calling the underlying file directly (`pnpm tsx
+scripts/check-config.ts`) does **not** load it: `tsx` reads no `.env`, so every variable
+reports `MISSING` even when the file is correct, which reads as a broken setup rather than
+a wrong command. Use the script names.
 
 Expected:
 
@@ -61,7 +67,7 @@ will execute without it.
 ## 2. Resolve the chain
 
 ```bash
-pnpm tsx scripts/resolve-sepolia.ts
+pnpm resolve
 ```
 
 This reads and **asserts** every fact the rest of this runbook depends on; it stops with a
@@ -104,7 +110,7 @@ period (3600s) and the patrician period (720s) all matched exactly.
 ## 3. Size the streams
 
 ```bash
-pnpm tsx scripts/plan-streams.ts
+pnpm plan-streams
 ```
 
 Pure arithmetic, in `scripts/lib/plan.ts` (unit-tested — see "Testing evidence" below),
@@ -321,7 +327,7 @@ cast send 0x30a6933Ca9230361972E413a15dC8114c952414e \
 ```
 
 **Check afterwards**: `realtimeBalanceOf(treasury, now)` on ETHx (Read Contract tab, or
-re-run `pnpm tsx scripts/resolve-sepolia.ts`) shows `available ≈ 251000000000000000`
+re-run `pnpm resolve`) shows `available ≈ 251000000000000000`
 (minus a negligible few seconds of any flow already running — none should be, yet).
 
 ### 5.3–5.5 Three `createFlow` calls on the CFAv1Forwarder
@@ -412,7 +418,7 @@ with `token` = ETHx, `sender` = the treasury, `flowOperator` = the Turnkey EOA.
 ## 6. Dry run
 
 ```bash
-pnpm tsx src/cli.ts policies/treasury.sepolia.yaml --dry-run
+pnpm tick policies/treasury.sepolia.yaml --dry-run
 ```
 
 **Before funding** (i.e. before section 5), this trivially prints `decision: hold`,

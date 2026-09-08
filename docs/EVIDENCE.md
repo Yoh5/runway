@@ -13,8 +13,8 @@ number, rate and gas figure back out of it. A number typed into this document th
 captured run never produced turns the test red -- that is the whole point of the gate, and
 it is why nothing here should be edited without re-running it.
 
-To reproduce: run the live tick (`pnpm tsx src/cli.ts policies/treasury.sepolia.yaml`),
-then `pnpm tsx scripts/capture-evidence.ts <path-to-the-run-record>` to produce
+To reproduce: run the live tick (`pnpm tick policies/treasury.sepolia.yaml`),
+then `pnpm capture-evidence <path-to-the-run-record>` to produce
 `docs/evidence/run.json` and `docs/evidence/report.html`, then `pnpm test:evidence`.
 
 ## The run
@@ -126,7 +126,7 @@ Every "rate after" above is that tier's floor, to the wei. That is the mandate's
 visible: the keeper shed the discretionary stream first, then the standard one, then the
 critical one, and stopped dead at each floor instead of taking any stream to zero -- which is
 what leaves 79664745201 wei/sec of the gap unclosed and the escalation raised.
-`pnpm tsx scripts/verify-rates.ts` re-reads these rates from the chain at any time and
+`pnpm verify-rates` re-reads these rates from the chain at any time and
 reports, per stream, whether the live rate sits at its committed rate, at its floor, or below
 it.
 

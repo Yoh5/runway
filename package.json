@@ -5,6 +5,13 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "tick": "node --env-file=.env --import tsx src/cli.ts",
+    "check-config": "node --env-file=.env --import tsx scripts/check-config.ts",
+    "resolve": "node --env-file=.env --import tsx scripts/resolve-sepolia.ts",
+    "plan-streams": "node --env-file=.env --import tsx scripts/plan-streams.ts",
+    "plan-breach": "node --env-file=.env --import tsx scripts/plan-breach.ts",
+    "verify-rates": "node --env-file=.env --import tsx scripts/verify-rates.ts",
+    "capture-evidence": "tsx scripts/capture-evidence.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:evidence": "vitest run --config vitest.evidence.config.ts",
