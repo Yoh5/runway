@@ -153,3 +153,25 @@ capture. The design document behind all of it is
 [docs/superpowers/specs/2026-09-06-runway-design.md](docs/superpowers/specs/2026-09-06-runway-design.md),
 and it is the authority: where the code and the spec disagreed during the build, one of the
 two was amended on purpose and the reason recorded.
+
+## How this was built
+
+Spec first, then a task-by-task plan, then test-driven implementation with a review pass
+per task and a whole-branch review at the end. The design document, the plan and the
+progress ledger are all in the repository, including the rulings where reality contradicted
+the plan — a decision engine that returned `hold` on zero outflow and so could never
+restore, two fixtures that were arithmetically unsatisfiable, a property test measured at
+0.1% assertion reach, and a `main()` at module scope that would have broadcast real
+transactions on import.
+
+Development was AI-assisted, with Claude Code. Every on-chain action was decided and signed
+by a human: the six setup signatures in [docs/SETUP.md](docs/SETUP.md), the mandate grant,
+and the funding. The agent's authority on chain is exactly the `permissions = 6` grant
+described at the top of this file and nothing else — which is, in the end, the same claim
+this project makes about any keeper.
+
+Two of the bugs fixed here were found by a KeeperHub maintainer reviewing our documentation
+of *their* API, not our code: an executor that turned a missing `sponsored` field into a
+positive claim that a write was unsponsored, and one that classified `success: false` as a
+refusal when it can accompany a transaction that is on chain. Both are in
+[docs/EVIDENCE.md](docs/EVIDENCE.md), stated rather than quietly corrected.
