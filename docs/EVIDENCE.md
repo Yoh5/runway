@@ -27,6 +27,7 @@ until it is green.
 | Block number | `SENTINEL-NOT-A-REAL-VALUE` |
 | Gas paid (wei, `gasUsed × effectiveGasPrice`) | `SENTINEL-NOT-A-REAL-VALUE` |
 | Sponsored | `SENTINEL-NOT-A-REAL-VALUE` |
+| Response contract observed (`outcome.contract`) | `SENTINEL-NOT-A-REAL-VALUE` |
 
 **On `sponsored`:** KeeperHub's protocol-write response carries a `sponsored` field only on
 the Turnkey Gas Station path — an ordinary, unsponsored write never includes it at all. So
@@ -60,10 +61,13 @@ different questions: the transaction row answers "did a write reach the chain an
 confirmed", and this table answers "did the stream's rate actually change" — and both are
 reported because a reader should not have to infer one from the other.
 
-**Which response contract this run saw:** the executor recognises both shapes and records
-which one answered (`outcome.contract`, present only when the newer, `status`-bearing
-contract was the one that responded — its absence in a landed outcome means the response
-still used the original `success`-boolean contract). `docs/evidence/run.json` carries
-whichever this run actually got; that is what makes this run's evidence trustworthy even
-though which contract `app.keeperhub.com` serves was, at run time, unverified without
-spending a live transaction.
+**Which response contract this run saw:** the executor recognises both of KeeperHub's
+protocol-write response contracts and states, on every outcome from either one, which one
+actually answered (`outcome.contract`: `"success"` for the original boolean-`success` body,
+`"status"` for the newer `status: "completed" \| "failed" \| "unconfirmed"` body
+`origin/staging` now sends). This is stated outright in the row above, not left for a reader
+to infer from whether a field is present — an absent field on this response has, historically,
+meant "not stated" (see `sponsored` above), so a *missing* contract row would be read the same
+way and would say nothing. `docs/evidence/run.json` carries whichever contract this run
+actually got; that is what makes this run's evidence trustworthy even though which contract
+`app.keeperhub.com` serves was, at run time, unverified without spending a live transaction.

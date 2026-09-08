@@ -155,6 +155,7 @@ describe("executeAdjustment", () => {
       gasUsedWei: "21000",
       effectiveGasPriceWei: "1000000000",
       sponsored: true,
+      contract: "success",
     });
   });
 
@@ -215,6 +216,7 @@ describe("executeAdjustment", () => {
       status: "refused",
       stage: "broadcast",
       detail: "insufficient allowance: CFA_ACL_NO_SENDER_CREATE_PERMISSIONS",
+      contract: "success",
     });
   });
 
@@ -378,6 +380,7 @@ describe("executeAdjustment", () => {
       status: "refused",
       stage: "broadcast",
       detail: "Missing Authorization header",
+      contract: "success",
     });
   });
 
@@ -603,7 +606,7 @@ describe("executeAdjustment", () => {
     });
   });
 
-  it("tags no contract field on old-shape (success-based) outcomes -- the compatibility guarantee keeps their shape byte-identical", async () => {
+  it("tags contract: 'success' on an old-shape outcome, but no executionId -- the old contract never sends one", async () => {
     const outcome = await executeAdjustment(
       baseDeps({ fetch: stub([], [[200, LANDED_BODY]]) }),
       policy(),
@@ -611,7 +614,7 @@ describe("executeAdjustment", () => {
       NOW,
     );
     expect(outcome.status).toBe("landed");
-    expect("contract" in outcome).toBe(false);
+    if (outcome.status === "landed") expect(outcome.contract).toBe("success");
     expect("executionId" in outcome).toBe(false);
   });
 

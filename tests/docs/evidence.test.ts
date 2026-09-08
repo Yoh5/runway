@@ -82,6 +82,24 @@ describe("docs/EVIDENCE.md is gated against docs/evidence/run.json", () => {
       const sponsoredText = outcome.sponsored === undefined ? "not stated" : String(outcome.sponsored);
       expect(doc, `sponsored status for ${who}`).toContain(sponsoredText);
 
+      // Which KeeperHub response contract produced this outcome must be
+      // stated outright in the document, not left for a reader to infer
+      // from a field's absence the way `sponsored` above legitimately is --
+      // the executor now tags every outcome from either contract
+      // (src/keeperhub/execute.ts), so a landed outcome from a real run
+      // always has one. A missing `contract` here means the run record
+      // predates that tagging, or something upstream regressed -- either
+      // way this must fail loudly rather than silently accept "not stated"
+      // for a field the executor is now supposed to always fill in.
+      if (outcome.contract === undefined) {
+        throw new Error(
+          `landed outcome for ${who} has no "contract" field -- every outcome must state which ` +
+            "KeeperHub response contract it saw (see src/keeperhub/execute.ts's ResponseContract); " +
+            "re-capture this run with an up-to-date executor",
+        );
+      }
+      expect(doc, `response contract for ${who}`).toContain(outcome.contract);
+
       const verified = bundle.evidence.verifiedRates.find(
         (v) => v.receiver.toLowerCase() === who.toLowerCase(),
       );
@@ -112,5 +130,15 @@ describe("docs/EVIDENCE.md is gated against docs/evidence/run.json", () => {
     const doc = await readFile(EVIDENCE_MD_PATH, "utf8");
     expect(doc.toLowerCase()).toMatch(/mined receipt/);
     expect(doc.toLowerCase()).toMatch(/chain read/);
+  });
+
+  it("states which response contract was observed outright, rather than leaving a reader to infer it from a missing field", async () => {
+    const doc = await readFile(EVIDENCE_MD_PATH, "utf8");
+    expect(doc).toMatch(/response contract/i);
+    expect(doc).toContain("outcome.contract");
+    // The document must not fall back to the same "absent field means not
+    // stated" convention it deliberately uses for `sponsored` -- this row
+    // is always filled in with an actual value, never left blank.
+    expect(doc.toLowerCase()).not.toMatch(/response contract[^\n]*not stated/);
   });
 });

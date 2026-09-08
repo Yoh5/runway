@@ -55,15 +55,18 @@ export type ExecutorDeps = {
  * `"completed" | "failed" | "unconfirmed"` state KeeperHub's `staging`
  * branch switched to (`app/api/execute/[...slug]/route.ts`), dropping
  * `success` entirely. We do not know whether the live deployment has caught
- * up with `staging`, so both are handled and this field records which one a
- * given call actually saw -- if the two ever diverge again, this is what
- * tells a reader when.
+ * up with `staging`, so both are handled and this field states -- on every
+ * outcome either branch produces -- which one actually answered, rather
+ * than leaving a reader to infer it from the field's absence. If the two
+ * ever diverge again, this is what tells a reader when.
  *
- * Deliberately absent (not `"success"`) on every outcome the old-shape
- * branch produces: that branch's behaviour -- including its exact returned
- * shape -- is the compatibility guarantee for callers written against the
- * pre-existing contract, so it stays byte-for-byte unchanged rather than
- * growing a new field. Only the new (`"status"`) branch tags itself.
+ * Not stamped on the handful of outcomes produced before or without ever
+ * seeing a body that could carry either field: a local `simulate` revert
+ * (no HTTP call made at all), a `fetch` throw (no response received), an
+ * unparseable body, or a 409 idempotency signal (KeeperHub's retry/conflict
+ * codes, which answer independently of which response contract is live).
+ * Those cases have nothing to name -- they didn't observe a contract, so
+ * they don't claim one.
  */
 export type ResponseContract = "status" | "success";
 
@@ -87,7 +90,7 @@ export type ExecutionOutcome =
        * the opposite of the truth to anyone checking the explorer.
        */
       sponsored?: boolean;
-      /** See `ResponseContract`. Present only on the new-shape branch. */
+      /** See `ResponseContract`. */
       contract?: ResponseContract;
       /**
        * KeeperHub's execution id, present whenever the new contract's
@@ -325,6 +328,7 @@ export async function executeAdjustment(
         // Spread in only when the response actually said so: an absent field
         // must stay absent, not become `false`.
         ...(typeof data.sponsored === "boolean" ? { sponsored: data.sponsored } : {}),
+        contract: "success",
       };
     }
 
@@ -343,22 +347,25 @@ export async function executeAdjustment(
         return {
           status: "unresolved",
           transactionHash: hash,
+          contract: "success",
           detail: safeText(
             `broadcast reported success: false but transactionHash ${hash} is present -- the write may be on chain despite the failure response: ${parts.join(": ")}`,
           ),
         };
       }
 
-      return { status: "refused", stage: "broadcast", detail: safeText(parts.join(": ")) };
+      return { status: "refused", stage: "broadcast", contract: "success", detail: safeText(parts.join(": ")) };
     }
 
     // A 4xx status (other than the two 409 codes already handled above) means
     // KeeperHub rejected the request before it could broadcast anything --
     // an invalid or under-scoped key, a malformed body -- even if the error
     // body does not carry a `success` field. That is a known refusal, not an
-    // unknown outcome.
+    // unknown outcome. It predates the `status`-bearing contract too (no
+    // `status` field here either), so it is tagged the same way: not the new
+    // contract, the closest fit of the two named values.
     if (response.status >= 400 && response.status < 500 && typeof data.error === "string") {
-      return { status: "refused", stage: "broadcast", detail: safeText(data.error) };
+      return { status: "refused", stage: "broadcast", contract: "success", detail: safeText(data.error) };
     }
 
     return {
