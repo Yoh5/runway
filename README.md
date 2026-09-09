@@ -125,8 +125,26 @@ pnpm tick policies/treasury.sepolia.yaml             # decide and write
 
 `--dry-run` reads the chain and prints the decision it would act on. It posts nothing.
 
+### On a schedule
+
+A keeper that only runs when someone types a command is a calculator. `pnpm serve` starts
+an HTTP trigger with two routes -- `GET /health` and `POST /tick`, the latter behind a
+shared-secret header -- so a KeeperHub scheduled workflow can drive the tick with nobody
+at the keyboard: a Schedule trigger, an HTTP Request node, and the keeper does the rest.
+
+It refuses before it acts: an unknown path, an unknown method, a missing or wrong token
+and a tick already in flight are each rejected before the runner is reachable, and the
+policy comes from the environment rather than from the request, so holding the token does
+not let anyone point the keeper at a different treasury. Every response states its outcome
+in the body as well as the status code, because KeeperHub's HTTP Request step returns the
+parsed body and never looks at the status -- so a failed tick is only visible to the
+workflow that triggered it if the failure is written inside the body.
+
+[docs/SCHEDULING.md](docs/SCHEDULING.md) has the setup, the workflow configuration and
+what to expect from a hosted instance.
+
 ```bash
-pnpm test           # 176 tests, including the invariant properties
+pnpm test           # 197 tests, including the invariant properties
 pnpm test:evidence  # the documentation gate, run separately on purpose
 pnpm typecheck && pnpm check
 ```

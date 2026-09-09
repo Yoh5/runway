@@ -96,7 +96,7 @@ export async function readRuns(dirPath: string): Promise<RunRecord[]> {
   return records;
 }
 
-function buildReaderDeps(): ReaderDeps {
+export function buildReaderDeps(): ReaderDeps {
   const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
   const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
   // viem's own `readContract` overloads are generic in a way `PublicClientLike`
@@ -115,7 +115,7 @@ function buildReaderDeps(): ReaderDeps {
   };
 }
 
-function buildExecutorDeps(): ExecutorDeps {
+export function buildExecutorDeps(): ExecutorDeps {
   const apiKey = requireEnv("KEEPERHUB_API_KEY");
   const baseUrl = requireEnv("KEEPERHUB_BASE_URL");
   const flowOperator = requireEnv("KEEPERHUB_FLOW_OPERATOR_ADDRESS");
@@ -152,7 +152,7 @@ function buildExecutorDeps(): ExecutorDeps {
   };
 }
 
-async function notifyWebhook(webhook: string, payload: unknown): Promise<void> {
+export async function notifyWebhook(webhook: string, payload: unknown): Promise<void> {
   const response = await fetch(webhook, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

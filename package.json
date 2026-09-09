@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "tick": "node --env-file=.env --import tsx src/cli.ts",
+    "serve": "node --env-file-if-exists=.env --import tsx src/serve.ts",
     "check-config": "node --env-file=.env --import tsx scripts/check-config.ts",
     "resolve": "node --env-file=.env --import tsx scripts/resolve-sepolia.ts",
     "plan-streams": "node --env-file=.env --import tsx scripts/plan-streams.ts",
