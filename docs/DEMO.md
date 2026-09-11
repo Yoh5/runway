@@ -1,6 +1,15 @@
-# Le film — 85 secondes, plan par plan
+# Le film — 95 secondes, plan par plan
 
 ## Avant de commencer
+
+**La voix est en ANGLAIS, les indications en français.** Ce que tu lis à voix
+haute est dans les blocs « Voice » ; tout le reste ne sort pas de l'écran. Le
+jury est anglophone, et un commentaire en français lui coûterait la moitié de
+ce que la vidéo démontre.
+
+Chaque bloc est calibré sur la durée de son plan, à environ 150 mots/minute —
+c'est un débit de démonstration, pas de conversation. Si tu dois réécrire une
+phrase, garde le nombre de mots : c'est lui qui fait tenir le plan.
 
 **Enregistre la voix d'abord, filme ensuite en l'écoutant au casque.** Sur un
 format court, c'est la voix qui fixe la durée : tu la retravailles jusqu'à ce
@@ -28,10 +37,10 @@ montre son RAPPORT et relit la chaîne, il ne rejoue rien.
 **Écran** : `docs/brand/runway-cover-1200x630.png` en plein écran, puis fondu
 vers `policies/treasury.sepolia.yaml`.
 
-**Voix**
-> Une trésorerie qui paie en flux continu peut se vider sans que personne ne
-> regarde. Runway surveille la sienne, et quand elle passe sous le seuil, il
-> réduit les versements lui-même — dans les limites qu'on lui a fixées.
+**Voice — read this aloud, in English**
+> A treasury that pays in continuous streams can drain while nobody is
+> watching. Runway watches its own, and reduces the payments when it falls
+> below the threshold.
 
 ---
 
@@ -40,10 +49,10 @@ vers `policies/treasury.sepolia.yaml`.
 **Écran** : le fichier de politique. Fais défiler lentement jusqu'aux trois
 tiers, et laisse le curseur sur les `floor`.
 
-**Voix**
-> Ces limites sont un fichier. Trois flux, trois priorités, et pour chacun un
-> plancher : le montant en dessous duquel l'agent n'a pas le droit de
-> descendre. Il ne décide pas de la politique, il l'applique.
+**Voice — read this aloud, in English**
+> Those limits are a file. Three streams, three priorities, and for each one a
+> floor — the rate the agent may never go below. It does not decide the policy.
+> It applies it.
 
 ---
 
@@ -53,11 +62,11 @@ tiers, et laisse le curseur sur les `floor`.
 `breach`, `Runway 23h 27m 30s`), puis descends sur le tableau des
 ajustements — les trois lignes `budget-shed`.
 
-**Voix**
-> Le 8 septembre, la réserve ne couvrait plus que vingt-trois heures. L'agent a
-> décidé de réduire, et il a commencé par le flux le moins critique. Le
-> discrétionnaire, puis le standard, puis le critique. Chacun s'arrête
-> exactement à son plancher — aucun n'est coupé.
+**Voice — read this aloud, in English**
+> On September the eighth, the reserve covered twenty-three more hours. The
+> agent decided to reduce, and it started with the least critical stream.
+> Discretionary, then standard, then critical. Each one stops exactly at its
+> floor. None of them is cut off.
 
 ---
 
@@ -67,10 +76,11 @@ ajustements — les trois lignes `budget-shed`.
 `landed`, puis bascule sur un onglet Etherscan. Laisse voir le statut
 `Success` et le contrat appelé.
 
-**Voix**
-> Trois écritures, trois transactions minées sur Sepolia. Elles passent par
-> l'ACL de Superfluid, avec une autorisation qui permet de modifier et
-> d'arrêter un flux — jamais d'en créer un.
+**Voice — read this aloud, in English**
+> Three writes, three transactions mined on Sepolia. They go through
+> Superfluid's own access control list, under a permission that lets the agent
+> slow a stream down and stop it — never open one. The treasury can revoke that
+> permission in a single call.
 
 ---
 
@@ -89,24 +99,22 @@ standard            21697786998      86791147994      21697786998  floor
 discretionary       11572153066      57860765330      11572153066  floor
 ```
 
-**Voix**
-> Et voici pourquoi c'est vérifiable. Cette commande relit la chaîne
-> maintenant, en direct. Les trois flux sont toujours à leur plancher, au wei
-> près. Une transaction minée prouve qu'un ordre est parti ; cette lecture
-> prouve qu'il a produit son effet.
+**Voice — read this aloud, in English**
+> And here is why it is verifiable. This command reads the chain live, right
+> now. All three streams are still at their floors, to the wei. A mined
+> transaction proves an order was sent. This proves it took effect.
 
 ---
 
-## Plan 6 — La moitié honnête · 1:20 → 1:30
+## Plan 6 — La moitié honnête · 1:20 → 1:35
 
 **Écran** : remonte sur `report.html`, section **Escalations**. Laisse lire
 `floors-exceed-budget`.
 
-**Voix**
-> Et quand ça ne suffit pas, il le dit. Après avoir tout réduit jusqu'aux
-> planchers, il manquait encore. L'agent s'arrête là, remonte l'écart à un
-> humain, et ne franchit pas une limite qu'on ne lui a pas donné le droit de
-> franchir. C'est ce qui le rend utilisable.
+**Voice — read this aloud, in English**
+> And when it is not enough, it says so. It reduced everything down to the
+> floors, and the budget still fell short. So it stops there, and escalates the
+> rest to a human. That is what makes it usable.
 
 ---
 
@@ -122,7 +130,17 @@ L'ordre de sacrifice, du moins coûteux au plus coûteux :
 
 ## Ce qu'il ne faut pas dire
 
-- « L'agent gère la trésorerie » — il applique une politique écrite d'avance.
-- « Entièrement automatique » — l'escalade existe justement parce qu'il ne
-  l'est pas, et c'est un argument, pas un aveu.
+Les formules à éviter sont données en anglais, puisque c'est la langue du
+commentaire :
+
+- **« the agent manages the treasury »** — il applique une politique écrite
+  d'avance. Dire « manages » promet un jugement qu'il n'a pas.
+- **« fully automatic »** — l'escalade existe précisément parce qu'il ne l'est
+  pas, et c'est un argument, pas un aveu. Préfère **« it acts on its own within
+  a mandate it cannot exceed »**.
+- **« it protects the treasury »** — il choisit qui continue d'être payé. C'est
+  plus précis, et plus difficile à contester.
 - Ne cite aucun chiffre que l'écran ne montre pas au même moment.
+
+Et si tu hésites sur un mot en direct : les trois qui portent la démonstration
+sont **mandate**, **floor** et **escalate**. Le reste peut se dire autrement.
