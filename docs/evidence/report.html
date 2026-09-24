@@ -55,11 +55,34 @@
 <body>
 <h1>Runway report</h1>
 <div class="summary-grid">
-    <div class="summary-item"><span class="label">Latest run</span><span class="value">2026-09-08T22:39:55.519Z</span></div>
-    <div class="summary-item"><span class="label">Runway</span><span class="value">23h 27m 30s</span></div>
+    <div class="summary-item"><span class="label">Latest run</span><span class="value">2026-09-09T00:27:00.475Z</span></div>
+    <div class="summary-item"><span class="label">Runway</span><span class="value">2d 8h 8m 26s</span></div>
     <div class="summary-item"><span class="label">Decision</span><span class="value"><span class="badge badge-reduce">reduce</span> <span class="badge badge-breach">breach</span></span></div>
   </div>
+<h2>Operating record</h2>
+<div class="summary-grid">
+  <div class="summary-item"><span class="label">Runs</span><span class="value">2 runs</span></div>
+  <div class="summary-item"><span class="label">Window</span><span class="value">2026-09-08T22:39:55.519Z &rarr; 2026-09-09T00:27:00.475Z</span></div>
+</div>
+<ul>
+  <li>Decisions: 2 reduce, 0 restore, 0 hold, 0 no decision (read failed)</li>
+  <li>Writes: 3 landed, 0 refused, 0 unresolved</li>
+  <li>Escalations: 2 escalations, <span class="status-refused">2 not delivered</span></li>
+</ul>
 <h2>Run history (most recent first)</h2>
+<section class="run">
+  <h3>2026-09-09T00:27:00.475Z</h3>
+  <div class="summary-grid">
+    <div class="summary-item"><span class="label">Decision</span><span class="value"><span class="badge badge-reduce">reduce</span> <span class="badge badge-breach">breach</span></span></div>
+    <div class="summary-item"><span class="label">Runway</span><span class="value">2d 8h 8m 26s</span></div>
+  </div>
+  <table>
+  <thead><tr><th>Receiver</th><th>Rate this run</th><th>Adjustment</th></tr></thead>
+  <tbody><tr><td class="mono">0x000000000000000000000000000000000000dead</td><td>86791147994 wei/sec</td><td class="muted">unchanged</td></tr><tr><td class="mono">0x00000000000000000000000000000000deaddead</td><td>21697786998 wei/sec</td><td class="muted">unchanged</td></tr><tr><td class="mono">0x0000000000000000000000000000deaddeaddead</td><td>11572153066 wei/sec</td><td class="muted">unchanged</td></tr></tbody>
+</table>
+  <p><strong>No action taken this run.</strong></p>
+  <h3>Escalations</h3><ul><li><span class="status-refused">FAILED TO DELIVER</span> — floors-exceed-budget: 79940222155 wei/sec above budget after every floor was reached</li></ul>
+</section>
 <section class="run">
   <h3>2026-09-08T22:39:55.519Z</h3>
   <div class="summary-grid">

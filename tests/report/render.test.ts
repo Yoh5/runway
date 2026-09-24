@@ -268,3 +268,82 @@ describe("renderReport", () => {
     expect(html.indexOf("0xnewer")).toBeLessThan(html.indexOf("0xabc"));
   });
 });
+
+describe("renderReport -- the operating record across runs", () => {
+  const at = (startedAt: string, over: Partial<RunRecord> = {}) => record({ startedAt, ...over });
+
+  it("counts the runs and names the window they span", () => {
+    const html = renderReport([
+      at("2026-09-10T12:00:00.000Z"),
+      at("2026-09-12T12:00:00.000Z"),
+      at("2026-09-11T12:00:00.000Z"),
+    ]);
+    expect(html).toContain("3 runs");
+    expect(html).toContain("2026-09-10T12:00:00.000Z");
+    expect(html).toContain("2026-09-12T12:00:00.000Z");
+  });
+
+  it("says one run without pretending to a history", () => {
+    expect(renderReport([record()])).toContain("1 run");
+  });
+
+  it("breaks the decisions down by kind", () => {
+    const holdFacts = facts(1_000_000n, [100n, 100n, 100n]);
+    const html = renderReport([
+      at("2026-09-10T12:00:00.000Z"),
+      at("2026-09-11T12:00:00.000Z", { facts: holdFacts, decision: decide(holdFacts, policy()) }),
+    ]);
+    expect(html).toMatch(/1[^<]*reduce/i);
+    expect(html).toMatch(/1[^<]*hold/i);
+  });
+
+  it("counts a run that never decided, rather than filing it under hold", () => {
+    const html = renderReport([
+      at("2026-09-10T12:00:00.000Z", {
+        facts: null,
+        decision: null,
+        outcomes: [],
+        escalations: [{ kind: "read-incomplete", detail: "rpc timed out", delivered: true }],
+      }),
+    ]);
+    expect(html).toMatch(/no decision/i);
+  });
+
+  it("counts the writes by what the chain did with them", () => {
+    const html = renderReport([
+      at("2026-09-10T12:00:00.000Z"),
+      at("2026-09-11T12:00:00.000Z", {
+        outcomes: [
+          {
+            adjustment: adjustment(),
+            outcome: { status: "refused", stage: "broadcast", detail: "mandate rejected" },
+          },
+        ],
+      }),
+    ]);
+    expect(html).toMatch(/1[^<]*landed/i);
+    expect(html).toMatch(/1[^<]*refused/i);
+  });
+
+  it("states how many escalations reached a human, not just how many were raised", () => {
+    const html = renderReport([
+      at("2026-09-10T12:00:00.000Z", {
+        escalations: [
+          { kind: "floors-exceed-budget", detail: "x", delivered: true },
+          { kind: "mandate-rejected", detail: "y", delivered: false },
+        ],
+      }),
+    ]);
+    expect(html).toMatch(/2[^<]*escalation/i);
+    expect(html).toMatch(/1[^<]*(not delivered|undelivered)/i);
+  });
+
+  it("does not claim an undelivered escalation when every one was delivered", () => {
+    const html = renderReport([
+      at("2026-09-10T12:00:00.000Z", {
+        escalations: [{ kind: "floors-exceed-budget", detail: "x", delivered: true }],
+      }),
+    ]);
+    expect(html).toMatch(/all .* delivered|1[^<]*delivered/i);
+  });
+});

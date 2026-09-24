@@ -129,6 +129,67 @@ function renderEscalations(escalations: RunEscalation[]): string {
   return `<h3>Escalations</h3><ul>${items}</ul>`;
 }
 
+/**
+ * The question a second run makes askable, and a twentieth makes the only one
+ * worth asking: has this thing been running, and did it behave every time?
+ * One run is a demonstration; a record of runs is an operating history, and
+ * that difference is what separates a keeper somebody would deploy from one
+ * that was shown working once.
+ *
+ * Every number here is counted from the records themselves — nothing is
+ * remembered between runs, and nothing is carried forward by hand.
+ */
+function renderOperatingRecord(records: RunRecord[]): string {
+  const kinds = { hold: 0, reduce: 0, restore: 0 };
+  let undecided = 0;
+  for (const record of records) {
+    if (!record.decision) undecided += 1;
+    else kinds[record.decision.kind] += 1;
+  }
+
+  const writes = { landed: 0, refused: 0, unresolved: 0 };
+  for (const record of records) {
+    for (const { outcome } of record.outcomes) writes[outcome.status] += 1;
+  }
+
+  const escalations = records.flatMap((record) => record.escalations);
+  const undelivered = escalations.filter((e) => !e.delivered).length;
+
+  const first = records[records.length - 1] as RunRecord;
+  const latest = records[0] as RunRecord;
+  const window =
+    records.length === 1
+      ? escapeHtml(latest.startedAt)
+      : `${escapeHtml(first.startedAt)} &rarr; ${escapeHtml(latest.startedAt)}`;
+
+  const decisions = [
+    `${kinds.reduce} reduce`,
+    `${kinds.restore} restore`,
+    `${kinds.hold} hold`,
+    `${undecided} no decision (read failed)`,
+  ].join(", ");
+
+  const escalationLine =
+    escalations.length === 0
+      ? "0 escalations"
+      : undelivered === 0
+        ? `${escalations.length} escalations, all delivered`
+        : `${escalations.length} escalations, <span class="status-refused">${undelivered} not delivered</span>`;
+
+  return `<h2>Operating record</h2>
+<div class="summary-grid">
+  <div class="summary-item"><span class="label">Runs</span><span class="value">${records.length} run${
+    records.length === 1 ? "" : "s"
+  }</span></div>
+  <div class="summary-item"><span class="label">Window</span><span class="value">${window}</span></div>
+</div>
+<ul>
+  <li>Decisions: ${decisions}</li>
+  <li>Writes: ${writes.landed} landed, ${writes.refused} refused, ${writes.unresolved} unresolved</li>
+  <li>Escalations: ${escalationLine}</li>
+</ul>`;
+}
+
 function renderRun(record: RunRecord): string {
   const runwayLine = record.decision
     ? `<div class="summary-item"><span class="label">Runway</span><span class="value">${escapeHtml(
@@ -185,6 +246,7 @@ export function renderReport(records: RunRecord[]): string {
     "Runway report",
     `<h1>Runway report</h1>
 ${summary}
+${renderOperatingRecord(sorted)}
 <h2>Run history (most recent first)</h2>
 ${history}`,
   );
