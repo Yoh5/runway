@@ -189,9 +189,13 @@ the decision named**. A transaction with no decision behind it is the one thing 
 must never be able to hide. The converse passes — a decided adjustment that was never
 executed means the executor refused, and refusing to write is always safe.
 
-Every run from here on stamps the digest of the policy it decided under, so a policy edited
-afterwards cannot make an honest record look wrong, or a dishonest one look right. The two
-runs above predate the digest and carry none; that is stated rather than filled in.
+Every run from here on stamps two things it could not otherwise prove: the **digest of the
+policy** it decided under, so a policy edited afterwards cannot make an honest record look
+wrong or a dishonest one look right, and the **build that decided it** — `RUNWAY_VERSION`
+when a deployment sets one, otherwise the commit, marked `-dirty` when the working tree had
+uncommitted changes, because that commit is precisely not what ran. Where git cannot answer
+the record says `unknown` rather than guessing. The two runs above predate both fields and
+carry neither; that is stated rather than filled in.
 
 ### The half that has not fired
 

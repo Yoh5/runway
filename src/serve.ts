@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import {
   buildExecutorDeps,
   buildReaderDeps,
+  currentVersion,
   notifyWebhook,
   readPolicy,
 } from "./cli.js";
@@ -92,6 +93,7 @@ async function realTick(policyPath: string, log: (message: string) => void): Pro
     readFacts: (p, n) => readFacts(readerDeps, p, n),
     execute: (p, adjustment, n) => executeAdjustment(executorDeps, p, adjustment, n),
     notify: notifyWebhook,
+    version: currentVersion,
   };
 
   const record = await runOnce(runDeps, policy, nowSec);

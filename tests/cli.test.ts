@@ -89,6 +89,7 @@ function stubDeps(over: Partial<CliDeps> = {}): CliDeps {
     buildExecutorDeps: fakeExecutorDeps,
     execute: async () => LANDED,
     notify: async () => {},
+    version: () => "test",
     mkdir: async () => undefined,
     writeFile: async () => {},
     readRuns: async () => [],

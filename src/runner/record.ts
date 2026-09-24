@@ -15,6 +15,13 @@ export type RunRecord = {
    * been edited since.
    */
   policyDigest?: string;
+  /**
+   * Which build decided this run: an explicit RUNWAY_VERSION, or the commit
+   * the working tree was on (marked `-dirty` when it had uncommitted
+   * changes). Optional for the same reason as `policyDigest` — the runs
+   * recorded before it existed cannot honestly claim one.
+   */
+  agentVersion?: string;
   facts: Facts | null;
   decision: Decision | null;
   outcomes: { adjustment: Adjustment; outcome: ExecutionOutcome }[];
@@ -122,6 +129,7 @@ export function fromSerialisable(value: unknown): RunRecord {
     // than filled in, because a digest nobody computed at the time is a claim
     // nobody can check.
     ...(typeof r.policyDigest === "string" ? { policyDigest: r.policyDigest } : {}),
+    ...(typeof r.agentVersion === "string" ? { agentVersion: r.agentVersion } : {}),
     facts: reviveFacts(r.facts),
     decision: reviveDecision(r.decision),
     outcomes: (r.outcomes as unknown[]).map(reviveOutcomeEntry),

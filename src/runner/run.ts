@@ -15,6 +15,12 @@ export type RunDeps = {
   readFacts: (policy: Policy, nowSec: number) => Promise<Facts>;
   execute: (policy: Policy, adjustment: Adjustment, nowSec: number) => Promise<ExecutionOutcome>;
   notify: (webhook: string, payload: unknown) => Promise<void>;
+  /**
+   * Which build is running, stamped on the record. A function, and optional,
+   * so the runner never reaches for a shell itself and every existing test
+   * double keeps compiling.
+   */
+  version?: () => string;
 };
 
 /**
@@ -52,6 +58,7 @@ export async function runOnce(deps: RunDeps, policy: Policy, nowSec: number): Pr
     // ran under -- `verifyRecord` refuses to check a run against a file that
     // has been edited since.
     policyDigest: policyDigest(policy),
+    ...(deps.version ? { agentVersion: deps.version() } : {}),
     facts: null,
     decision: null,
     outcomes: [],

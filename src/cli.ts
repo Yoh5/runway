@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -16,6 +17,7 @@ import { assertDeliverableEscalation, createWebhookNotifier } from "./runner/not
 import { fromSerialisable, toSerialisable } from "./runner/record.js";
 import type { RunRecord } from "./runner/record.js";
 import { runOnce, type RunDeps } from "./runner/run.js";
+import { resolveVersion } from "./runner/version.js";
 
 /**
  * Not published anywhere else in this codebase (Task 6 only reads the chain,
@@ -181,6 +183,17 @@ export function buildExecutorDeps(): ExecutorDeps {
  * The real escalation notifier: retried, timed out, and at-least-once. Kept
  * as a named export because `serve.ts` wires the same one into the HTTP tick.
  */
+/**
+ * The build that is running, stamped on every record. `git` is asked only
+ * when RUNWAY_VERSION is unset -- a deployment sets it, a local run has a
+ * repository to ask.
+ */
+export function currentVersion(): string {
+  return resolveVersion(process.env, (command) =>
+    execSync(command, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }),
+  );
+}
+
 export const notifyWebhook = createWebhookNotifier({
   fetch: globalThis.fetch,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -206,6 +219,7 @@ export type CliDeps = {
     nowSec: number,
   ) => ReturnType<typeof executeAdjustment>;
   notify: (webhook: string, payload: unknown) => Promise<void>;
+  version: () => string;
   mkdir: (dirPath: string, options: { recursive: boolean }) => Promise<unknown>;
   writeFile: (filePath: string, data: string) => Promise<void>;
   readRuns: (dirPath: string) => Promise<RunRecord[]>;
@@ -270,6 +284,7 @@ export async function runCli(deps: CliDeps, args: string[]): Promise<Decision | 
     readFacts: (p, n) => deps.readFacts(readerDeps, p, n),
     execute: (p, adjustment, n) => deps.execute(executorDeps, p, adjustment, n),
     notify: deps.notify,
+    version: deps.version,
   };
 
   const record = await runOnce(runDeps, policy, nowSec);
@@ -302,6 +317,7 @@ function realCliDeps(): CliDeps {
     buildExecutorDeps,
     execute: executeAdjustment,
     notify: notifyWebhook,
+    version: currentVersion,
     mkdir,
     writeFile,
     readRuns,
