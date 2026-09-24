@@ -135,6 +135,12 @@ With two or more, every read is asked of all of them and the tick proceeds only 
 agree — a failing endpoint is tolerated, a disagreeing one stops the tick with no decision
 taken.
 
+Every read in a tick is pinned to one block — the lowest height the endpoints report, the
+only block all of them certainly have. Unpinned, the facts smear: a balance from one block
+divided by an outflow from another, each read true and the pair not. Pinning is also what
+makes agreement meaningful, since two endpoints at different heights would otherwise
+disagree about a rate that never changed.
+
 This is not caution for its own sake: one endpoint once answered "not found" for a
 transaction the others had. A replica running behind announces itself in no way at all, and
 a keeper that believes the first answer it receives can throttle someone's pay on a stale

@@ -24,7 +24,18 @@ export type PublicClientLike = {
     abi: unknown;
     functionName: string;
     args: readonly unknown[];
+    /**
+     * Pins the read to one block. `readFacts` sets it on every call so the
+     * facts describe a single state of the chain rather than a smear across
+     * whatever blocks landed while it was reading.
+     */
+    blockNumber?: bigint;
   }) => Promise<unknown>;
+  /**
+   * Optional so every existing test double keeps compiling: a client that
+   * cannot report a height simply reads unpinned, exactly as before.
+   */
+  getBlockNumber?: () => Promise<bigint>;
 };
 
 export type ReaderDeps = {
@@ -60,8 +71,23 @@ export async function readFacts(
   const secrets = deps.rpcUrl === undefined ? [] : [deps.rpcUrl].flat();
   const safeReason = (error: unknown) => redact(reason(error), secrets);
 
+  // The facts are five separate reads. Unpinned, a block can land between the
+  // balance and the last stream, and the tick would divide a balance from one
+  // block by an outflow from another -- each read true, the pair not. It also
+  // matters for a quorum client: two endpoints at different heights would
+  // disagree on a rate that never changed, and fail the tick for nothing.
+  let blockNumber: bigint | undefined;
+  if (deps.client.getBlockNumber) {
+    blockNumber = await deps.client.getBlockNumber().catch((error: unknown) => {
+      failures.push({ what: "getBlockNumber", reason: safeReason(error) });
+      return undefined;
+    });
+    if (blockNumber === undefined) throw new ReadIncompleteError(failures);
+  }
+
   const balanceResult = await deps.client
     .readContract({
+      blockNumber,
       address: policy.token,
       abi: SUPER_TOKEN_READ_ABI,
       functionName: "realtimeBalanceOf",
@@ -74,6 +100,7 @@ export async function readFacts(
 
   const accountFlowrateResult = await deps.client
     .readContract({
+      blockNumber,
       address: CFA_FORWARDER_ADDRESS,
       abi: CFA_FORWARDER_READ_ABI,
       functionName: "getAccountFlowrate",
@@ -91,6 +118,7 @@ export async function readFacts(
   for (const recipient of policy.recipients) {
     const flow = await deps.client
       .readContract({
+        blockNumber,
         address: CFA_FORWARDER_ADDRESS,
         abi: CFA_FORWARDER_READ_ABI,
         functionName: "getFlowInfo",

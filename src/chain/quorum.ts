@@ -54,6 +54,30 @@ export function createQuorumClient(clients: readonly PublicClientLike[]): Public
   if (clients.length === 1 && only) return only;
 
   return {
+    /**
+     * The lowest height any endpoint reports, which is the only block all of
+     * them certainly have. Reading at the highest would ask a lagging node
+     * for a block it has never seen, and the pinned read would fail on a
+     * healthy endpoint for no reason. An endpoint that cannot report at all
+     * is skipped — it will simply not answer the reads either.
+     */
+    getBlockNumber: async () => {
+      const settled = await Promise.allSettled(
+        clients.map((client) =>
+          client.getBlockNumber
+            ? client.getBlockNumber()
+            : Promise.reject(new Error("client cannot report a block height")),
+        ),
+      );
+      const heights = settled
+        .filter((r): r is PromiseFulfilledResult<bigint> => r.status === "fulfilled")
+        .map((r) => r.value);
+      if (heights.length === 0) {
+        throw new Error(`no RPC endpoint could report a block height (${clients.length} tried)`);
+      }
+      return heights.reduce((lowest, height) => (height < lowest ? height : lowest));
+    },
+
     readContract: async (args) => {
       const settled = await Promise.allSettled(clients.map((client) => client.readContract(args)));
 

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { readFacts, ReadIncompleteError } from "../../src/chain/reader.js";
+import type { PublicClientLike } from "../../src/chain/reader.js";
 import { CFA_FORWARDER_READ_ABI, SUPER_TOKEN_READ_ABI } from "../../src/chain/abi.js";
 import type { Address, Policy } from "../../src/policy/types.js";
 
@@ -264,5 +265,71 @@ describe("sepolia-reads fixture shape", () => {
 
   it("is pinned to Sepolia -- this reader has no other chain to read", () => {
     expect(fixture.chainId).toBe(11155111);
+  });
+});
+
+describe("readFacts -- one block, not a smear of blocks", () => {
+  /**
+   * The facts are five separate reads. Without pinning, a block can land
+   * between the balance and the last stream, and the tick divides a balance
+   * from one block by an outflow from another. Worse now that several
+   * endpoints answer: two nodes at different heights would disagree on a rate
+   * that never actually changed, and fail the tick for nothing.
+   */
+  function recordingClient(calls: { blockNumbers: (bigint | undefined)[] }): PublicClientLike & {
+    getBlockNumber: () => Promise<bigint>;
+  } {
+    return {
+      getBlockNumber: async () => 11_774_404n,
+      readContract: async (args: { functionName: string; blockNumber?: bigint }) => {
+        calls.blockNumbers.push(args.blockNumber);
+        if (args.functionName === "realtimeBalanceOf") return [1_000n, 0n, 0n];
+        if (args.functionName === "getAccountFlowrate") return -300n;
+        return [0n, 100n, 0n, 0n];
+      },
+    };
+  }
+
+  it("pins every read to the same block", async () => {
+    const calls = { blockNumbers: [] as (bigint | undefined)[] };
+    await readFacts({ client: recordingClient(calls) }, policy(), 1_700_000_000);
+
+    expect(calls.blockNumbers.length).toBeGreaterThan(1);
+    expect(new Set(calls.blockNumbers.map(String)).size).toBe(1);
+    expect(calls.blockNumbers[0]).toBe(11_774_404n);
+  });
+
+  it("still reads when the client cannot report a block, so existing callers keep working", async () => {
+    const facts = await readFacts(
+      {
+        client: {
+          readContract: async (args: { functionName: string }) => {
+            if (args.functionName === "realtimeBalanceOf") return [1_000n, 0n, 0n];
+            if (args.functionName === "getAccountFlowrate") return -300n;
+            return [0n, 100n, 0n, 0n];
+          },
+        },
+      },
+      policy(),
+      1_700_000_000,
+    );
+    expect(facts.availableBalanceWei).toBe(1_000n);
+  });
+
+  it("fails closed when the block cannot be read at all, rather than reading a smear", async () => {
+    await expect(
+      readFacts(
+        {
+          client: {
+            getBlockNumber: async () => {
+              throw new Error("rpc 503");
+            },
+            readContract: async () => [0n, 100n, 0n, 0n],
+          },
+        },
+        policy(),
+        1_700_000_000,
+      ),
+    ).rejects.toThrow(ReadIncompleteError);
   });
 });

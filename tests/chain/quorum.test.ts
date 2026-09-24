@@ -96,3 +96,37 @@ describe("createQuorumClient -- construction", () => {
     expect(() => createQuorumClient([])).toThrow();
   });
 });
+
+/** A node at a given height, or one that throws when handed an Error. */
+function heightNode(height: bigint | Error): PublicClientLike {
+  return {
+    readContract: async () => 0n,
+    getBlockNumber: async () => {
+      if (height instanceof Error) throw height;
+      return height;
+    },
+  };
+}
+
+describe("createQuorumClient -- agreeing on which block to read", () => {
+  it("takes the lowest height, the only block every endpoint certainly has", async () => {
+    const client = createQuorumClient([heightNode(11_774_410n), heightNode(11_774_404n)]);
+    await expect(client.getBlockNumber?.()).resolves.toBe(11_774_404n);
+  });
+
+  it("ignores an endpoint that cannot report its height", async () => {
+    const client = createQuorumClient([
+      heightNode(new Error("rpc 503")),
+      heightNode(11_774_404n),
+    ]);
+    await expect(client.getBlockNumber?.()).resolves.toBe(11_774_404n);
+  });
+
+  it("throws when no endpoint can report a height, so the tick fails closed", async () => {
+    const client = createQuorumClient([
+      heightNode(new Error("rpc 503")),
+      heightNode(new Error("socket hang up")),
+    ]);
+    await expect(client.getBlockNumber?.()).rejects.toThrow(/height|block/i);
+  });
+});

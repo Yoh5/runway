@@ -123,6 +123,7 @@ export function buildReaderDeps(): ReaderDeps {
     return {
       readContract: (args: Parameters<PublicClientLike["readContract"]>[0]) =>
         client.readContract(args as unknown as Parameters<typeof client.readContract>[0]),
+      getBlockNumber: () => client.getBlockNumber(),
     };
   });
 
