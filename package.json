@@ -14,6 +14,7 @@
     "plan-restore": "node --env-file=.env --import tsx scripts/plan-restore.ts",
     "verify-rates": "node --env-file=.env --import tsx scripts/verify-rates.ts",
     "conformance": "node --env-file=.env --import tsx scripts/conformance.ts",
+    "verify-record": "node --import tsx scripts/verify-record.ts",
     "capture-evidence": "tsx scripts/capture-evidence.ts",
     "test": "vitest run",
     "test:watch": "vitest",

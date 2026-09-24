@@ -7,6 +7,14 @@ export type RunEscalation = { kind: string; detail: string; delivered: boolean }
 export type RunRecord = {
   startedAt: string;
   nowSec: number;
+  /**
+   * Digest of the policy this run decided under. Optional because the runs
+   * recorded before it existed do not carry one, and inventing it for them
+   * would be a claim nobody can check. Present on every run from here on, so
+   * `verifyRecord` can refuse to check a record against a policy that has
+   * been edited since.
+   */
+  policyDigest?: string;
   facts: Facts | null;
   decision: Decision | null;
   outcomes: { adjustment: Adjustment; outcome: ExecutionOutcome }[];
@@ -110,6 +118,10 @@ export function fromSerialisable(value: unknown): RunRecord {
   return {
     startedAt: r.startedAt as string,
     nowSec: r.nowSec as number,
+    // Absent on runs recorded before the digest existed; left absent rather
+    // than filled in, because a digest nobody computed at the time is a claim
+    // nobody can check.
+    ...(typeof r.policyDigest === "string" ? { policyDigest: r.policyDigest } : {}),
     facts: reviveFacts(r.facts),
     decision: reviveDecision(r.decision),
     outcomes: (r.outcomes as unknown[]).map(reviveOutcomeEntry),

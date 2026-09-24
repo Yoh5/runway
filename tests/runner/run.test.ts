@@ -247,7 +247,7 @@ describe("runOnce", () => {
   it("only ever writes the documented run-record fields, never the raw dependencies", async () => {
     const record = await runOnce(deps(), policy(), 1_700_000_000);
     expect(Object.keys(record).sort()).toEqual(
-      ["decision", "escalations", "facts", "nowSec", "outcomes", "startedAt"].sort(),
+      ["decision", "escalations", "facts", "nowSec", "outcomes", "policyDigest", "startedAt"].sort(),
     );
   });
 

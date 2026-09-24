@@ -120,6 +120,7 @@ pnpm check-config       # env presence and policy sanity, prints no secret value
 pnpm resolve            # resolves token, host and deposit off chain
 pnpm verify-rates       # live rate vs committed rate vs floor, per stream
 pnpm conformance        # live checks: the API, the mandate, the recorded executions
+pnpm verify-record      # re-decide every recorded run from its own facts
 pnpm plan-restore       # how much to wrap before a tick would restore, and what it would decide
 
 pnpm tick policies/treasury.sepolia.yaml --dry-run   # decide, execute nothing
@@ -167,6 +168,30 @@ it does can move a rate or spend gas, and it is safe to run on a schedule. It ex
 non-zero when a check fails. `mandate-permissions` fails on a mandate that was *widened*
 as loudly as on one that was revoked — a create bit is the one thing this keeper must
 never hold.
+
+### Checking the record against itself
+
+A run record says what happened. `pnpm verify-record` says something stronger: that what
+happened **follows** from what was seen, by a rule anyone holding the policy file can apply
+themselves. It re-runs the decision function over the facts each record carries and
+compares the result to the decision that record claims.
+
+```
+policy: policies/treasury.sepolia.yaml
+digest: sha256:fa0d02fba4c143282b4a7c296c6e949c8b411b662612e690002e3ab05c174229
+
+PASS  2026-09-08T22:39:55.519Z  reduce, 3 adjustment(s), 3 write(s), all mapped
+PASS  2026-09-09T00:27:00.475Z  reduce, 0 adjustment(s), 0 write(s), all mapped
+```
+
+It also checks the direction an auditor cares about: **every write maps to an adjustment
+the decision named**. A transaction with no decision behind it is the one thing a record
+must never be able to hide. The converse passes — a decided adjustment that was never
+executed means the executor refused, and refusing to write is always safe.
+
+Every run from here on stamps the digest of the policy it decided under, so a policy edited
+afterwards cannot make an honest record look wrong, or a dishonest one look right. The two
+runs above predate the digest and carry none; that is stated rather than filled in.
 
 ### The half that has not fired
 

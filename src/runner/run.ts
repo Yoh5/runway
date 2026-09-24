@@ -4,6 +4,7 @@ import type { ExecutionOutcome } from "../keeperhub/execute.js";
 import { reason } from "../redact.js";
 import { deliverEscalation } from "./escalate.js";
 import type { RunRecord } from "./record.js";
+import { policyDigest } from "./verify.js";
 
 /**
  * Every collaborator the runner needs, as a function. This is what keeps the
@@ -47,6 +48,10 @@ export async function runOnce(deps: RunDeps, policy: Policy, nowSec: number): Pr
   const record: RunRecord = {
     startedAt: new Date().toISOString(),
     nowSec,
+    // Stamped before anything is read, so a record always names the policy it
+    // ran under -- `verifyRecord` refuses to check a run against a file that
+    // has been edited since.
+    policyDigest: policyDigest(policy),
     facts: null,
     decision: null,
     outcomes: [],
