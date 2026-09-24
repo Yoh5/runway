@@ -12,6 +12,7 @@ import { readFacts } from "./chain/reader.js";
 import { executeAdjustment } from "./keeperhub/execute.js";
 import { reason } from "./redact.js";
 import { toSerialisable, type RunRecord } from "./runner/record.js";
+import { assertDeliverableEscalation } from "./runner/notify.js";
 import { runOnce, type RunDeps } from "./runner/run.js";
 import { createTriggerHandler, type TriggerRequest } from "./trigger/handle.js";
 
@@ -80,6 +81,10 @@ function requireEnv(name: string): string {
  */
 async function realTick(policyPath: string, log: (message: string) => void): Promise<RunRecord> {
   const policy = await readPolicy(policyPath);
+  // Same refusal as the CLI's write mode: a scheduled tick that cannot reach
+  // a human is the failure this whole escalation path exists to prevent, and
+  // a scheduled one fails unwatched.
+  assertDeliverableEscalation(policy.escalation.webhook);
   const nowSec = Math.floor(Date.now() / 1000);
   const readerDeps = buildReaderDeps();
   const executorDeps = buildExecutorDeps();

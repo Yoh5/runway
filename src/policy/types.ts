@@ -29,6 +29,15 @@ export type Policy = {
   escalation: { webhook: string };
 };
 
+/**
+ * What `escalation.webhook` holds when the policy names an environment
+ * variable that is not set. Loading still succeeds, so a read-only script
+ * (`verify-rates`, `plan-breach`) keeps working without an alert endpoint;
+ * every path that can move a rate calls `assertDeliverableEscalation` first
+ * and refuses this value by name.
+ */
+export const UNRESOLVED_WEBHOOK_PREFIX = "unset://";
+
 export type Stream = { receiver: Address; flowRateWeiPerSec: bigint };
 
 export type Facts = {

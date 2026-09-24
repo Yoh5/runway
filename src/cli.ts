@@ -11,6 +11,7 @@ import { loadPolicy } from "./policy/load.js";
 import type { Adjustment, Decision, Policy } from "./policy/types.js";
 import { reason, redact } from "./redact.js";
 import { renderReport } from "./report/render.js";
+import { assertDeliverableEscalation, createWebhookNotifier } from "./runner/notify.js";
 import { fromSerialisable, toSerialisable } from "./runner/record.js";
 import type { RunRecord } from "./runner/record.js";
 import { runOnce, type RunDeps } from "./runner/run.js";
@@ -152,16 +153,14 @@ export function buildExecutorDeps(): ExecutorDeps {
   };
 }
 
-export async function notifyWebhook(webhook: string, payload: unknown): Promise<void> {
-  const response = await fetch(webhook, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    throw new Error(`escalation webhook responded with http ${response.status}`);
-  }
-}
+/**
+ * The real escalation notifier: retried, timed out, and at-least-once. Kept
+ * as a named export because `serve.ts` wires the same one into the HTTP tick.
+ */
+export const notifyWebhook = createWebhookNotifier({
+  fetch: globalThis.fetch,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+});
 
 /**
  * Every collaborator `runCli` needs, as a function — the same shape `RunDeps`
@@ -234,6 +233,13 @@ export async function runCli(deps: CliDeps, args: string[]): Promise<Decision | 
     return decision;
   }
 
+  // Checked before a single read, and only on the write path: a tick that can
+  // move rates must be able to tell a human when it stops. The run of
+  // 8 September 2026 escalated into `example.invalid` and recorded
+  // `delivered: false` — correct, and useless. A dry run escalates to nobody
+  // by design, so it keeps the placeholder.
+  assertDeliverableEscalation(policy.escalation.webhook);
+
   const readerDeps = deps.buildReaderDeps();
   const executorDeps = deps.buildExecutorDeps();
   const runDeps: RunDeps = {
@@ -252,6 +258,14 @@ export async function runCli(deps: CliDeps, args: string[]): Promise<Decision | 
   const filePath = path.join(runsDir, fileName);
   await deps.writeFile(filePath, JSON.stringify(toSerialisable(record), null, 2));
   deps.log(filePath);
+
+  // An escalation the record calls undelivered has reached nobody. It is in
+  // the JSON and in the report, but both are read after the fact — so say it
+  // here too, where whoever ran the tick is still looking.
+  for (const escalation of record.escalations.filter((e) => !e.delivered)) {
+    deps.log(`ESCALATION NOT DELIVERED — ${escalation.kind}: ${escalation.detail}`);
+  }
+
   return undefined;
 }
 

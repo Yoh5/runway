@@ -1,5 +1,12 @@
 import { load } from "js-yaml";
-import { type Address, type Policy, type Recipient, type Tier, TIER_ORDER } from "./types.js";
+import {
+  type Address,
+  type Policy,
+  type Recipient,
+  type Tier,
+  TIER_ORDER,
+  UNRESOLVED_WEBHOOK_PREFIX,
+} from "./types.js";
 
 export class PolicyError extends Error {
   constructor(message: string) {
@@ -51,7 +58,28 @@ function asTier(value: unknown): Tier {
   return value as Tier;
 }
 
-export function loadPolicy(yamlText: string): Policy {
+/**
+ * An escalation webhook is usually a bearer token in URL form — a Discord or
+ * Slack endpoint is readable by anyone holding the link. Writing
+ * `webhook: "${ESCALATION_WEBHOOK}"` keeps the policy committable while the
+ * URL itself lives beside the API keys in `.env`. A named variable that is
+ * missing or empty resolves to `unset://NAME` rather than to the literal
+ * string `${ESCALATION_WEBHOOK}`: loading still succeeds, so a read-only
+ * script needs no alert endpoint, and every write path refuses that value by
+ * name before a single read. What this must never do is let a tick post
+ * escalations into a URL that cannot receive them.
+ */
+function expandEnv(value: string, env: Record<string, string | undefined>): string {
+  const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+  if (!match) return value;
+  const name = match[1] ?? "";
+  return env[name] || `${UNRESOLVED_WEBHOOK_PREFIX}${name}`;
+}
+
+export function loadPolicy(
+  yamlText: string,
+  env: Record<string, string | undefined> = process.env,
+): Policy {
   const raw = load(yamlText);
   if (typeof raw !== "object" || raw === null) {
     throw new PolicyError("Policy document is not a mapping");
@@ -135,6 +163,6 @@ export function loadPolicy(yamlText: string): Policy {
     targetRunwaySec,
     hysteresisSec,
     recipients,
-    escalation: { webhook },
+    escalation: { webhook: expandEnv(webhook, env) },
   };
 }

@@ -54,7 +54,11 @@ recipients:
     # stream that must stay restorable.
     floorRateWeiPerSec: "11572153066"
 escalation:
-  # Not yet a real KeeperHub notification action (spec section 11) -- the
-  # `--dry-run` demo this policy is sized for never calls this webhook.
-  # Replace before running the CLI in write mode on a cadence.
-  webhook: "https://example.invalid/hook"
+  # Read from the environment at load time: an escalation endpoint (Discord,
+  # Slack, a pager) is a bearer token in URL form, so it lives in .env beside
+  # the API keys and never in this committed file. An unset or empty
+  # ESCALATION_WEBHOOK fails the load by name, and both write paths -- the
+  # CLI without --dry-run, and the scheduled HTTP tick -- refuse to start
+  # against a placeholder host. Not yet a KeeperHub notification action
+  # (spec section 11); a webhook is what exists today.
+  webhook: "${ESCALATION_WEBHOOK}"

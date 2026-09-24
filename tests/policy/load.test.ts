@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadPolicy, PolicyError } from "../../src/policy/load.js";
+import { UNRESOLVED_WEBHOOK_PREFIX } from "../../src/policy/types.js";
 
 const VALID = `
 version: 1
@@ -64,5 +65,36 @@ describe("loadPolicy", () => {
   it("rejects an unknown tier", () => {
     const bad = VALID.replace("tier: critical", "tier: vip");
     expect(() => loadPolicy(bad)).toThrow(/tier/i);
+  });
+});
+
+describe("loadPolicy -- the escalation webhook read from the environment", () => {
+  const withHook = (value: string) =>
+    VALID.replace('webhook: "https://example.invalid/hook"', `webhook: "${value}"`);
+
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: the ${VAR} form is the policy syntax under test, not an unfinished template
+  it("expands ${VAR} from the supplied environment, so a private URL never lands in the committed policy", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: policy syntax, not a template
+    const policy = loadPolicy(withHook("${ESCALATION_WEBHOOK}"), {
+      ESCALATION_WEBHOOK: "https://hooks.runway-ops.dev/escalations",
+    });
+    expect(policy.escalation.webhook).toBe("https://hooks.runway-ops.dev/escalations");
+  });
+
+  it("marks an unset variable unresolved by name, so a read-only script still loads the policy", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: policy syntax, not a template
+    const policy = loadPolicy(withHook("${ESCALATION_WEBHOOK}"), {});
+    expect(policy.escalation.webhook).toBe(`${UNRESOLVED_WEBHOOK_PREFIX}ESCALATION_WEBHOOK`);
+  });
+
+  it("treats a variable that is set but empty exactly like an unset one", () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: policy syntax, not a template
+    const policy = loadPolicy(withHook("${ESCALATION_WEBHOOK}"), { ESCALATION_WEBHOOK: "" });
+    expect(policy.escalation.webhook).toBe(`${UNRESOLVED_WEBHOOK_PREFIX}ESCALATION_WEBHOOK`);
+  });
+
+  it("leaves a literal URL untouched", () => {
+    const policy = loadPolicy(withHook("https://hooks.runway-ops.dev/escalations"), {});
+    expect(policy.escalation.webhook).toBe("https://hooks.runway-ops.dev/escalations");
   });
 });

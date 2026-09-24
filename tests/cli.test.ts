@@ -291,3 +291,65 @@ describe("module import safety (C1)", () => {
     expect(process.exitCode).not.toBe(1);
   });
 });
+
+describe("runCli — write mode refuses to escalate into the void", () => {
+  const realHook = "https://hooks.runway-ops.dev/escalations";
+
+  it("refuses to start when the policy still carries the template's placeholder webhook", async () => {
+    let reads = 0;
+    let executes = 0;
+    const deps = stubDeps({
+      readFacts: async () => {
+        reads += 1;
+        return facts(15_000n, [100n, 100n, 100n]);
+      },
+      execute: async () => {
+        executes += 1;
+        return LANDED;
+      },
+    });
+
+    await expect(runCli(deps, ["policy.yaml"])).rejects.toThrow(/webhook/i);
+    expect(reads).toBe(0);
+    expect(executes).toBe(0);
+  });
+
+  it("still allows a dry run with the placeholder, since a dry run escalates to nobody", async () => {
+    const decision = await runCli(stubDeps(), ["policy.yaml", "--dry-run"]);
+    expect(decision?.kind).toBe("reduce");
+  });
+
+  it("runs normally once the webhook is a real endpoint", async () => {
+    const written: string[] = [];
+    const deps = stubDeps({
+      readPolicy: async () => policy({ escalation: { webhook: realHook } }),
+      writeFile: async (filePath) => {
+        written.push(filePath);
+      },
+    });
+
+    await runCli(deps, ["policy.yaml"]);
+
+    expect(written).toHaveLength(1);
+  });
+
+  it("prints a loud line when an escalation was decided but could not be delivered", async () => {
+    const lines: string[] = [];
+    const deps = stubDeps({
+      readPolicy: async () => policy({ escalation: { webhook: realHook } }),
+      // Balance low enough that every floor together still exceeds the budget:
+      // the same `floors-exceed-budget` escalation the 8 September run raised.
+      readFacts: async () => facts(1_000n, [100n, 100n, 100n]),
+      notify: async () => {
+        throw new Error("escalation webhook responded with http 500");
+      },
+      log: (message) => lines.push(message),
+    });
+
+    await runCli(deps, ["policy.yaml"]);
+
+    const loud = lines.filter((line) => /not delivered/i.test(line));
+    expect(loud).toHaveLength(1);
+    expect(loud[0]).toMatch(/floors-exceed-budget/);
+  });
+});

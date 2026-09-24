@@ -152,8 +152,10 @@ anything the endpoint said about itself.
 - It does not retry a failed tick. The next scheduled run is the retry, and it recomputes
   from fresh chain state rather than replaying a stale decision, which is the safer of the
   two behaviours for money.
-- It does not alert anyone on its own. The escalation webhook in the policy covers the
-  cases the keeper can see; nothing yet covers the keeper itself being down. A condition
+- It does not alert anyone on its own beyond the escalation webhook, which covers the
+  cases the keeper can see; nothing yet covers the keeper itself being down. The server
+  refuses to start a tick whose webhook is unset or a placeholder, so a schedule cannot run
+  unwatched, but a schedule that never fires still raises nothing. A condition
   node on `ok == false` in the workflow is the closest thing available today, and it only
   fires when the workflow ran at all.
 - It holds no state between ticks. Every decision is made from what the chain says at that

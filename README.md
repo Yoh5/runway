@@ -56,7 +56,8 @@ the floors and escalates the remainder to a human.
    transaction landed; only a read proves the stream changed rate.
 5. **Escalate** — on incomplete reads, a rejected mandate, an unknown write outcome, or a
    budget the floors cannot meet. Silence is never the answer to a case the policy does not
-   cover.
+   cover. The escalation is posted to the policy's webhook, retried with a widening delay
+   under a hard timeout, and recorded with the delivery outcome either way.
 
 The run is recorded as JSON and rendered to a self-contained HTML report (no scripts, no
 remote resources, everything escaped).
@@ -124,6 +125,24 @@ pnpm tick policies/treasury.sepolia.yaml             # decide and write
 ```
 
 `--dry-run` reads the chain and prints the decision it would act on. It posts nothing.
+
+### Where escalations go
+
+`escalation.webhook` in the policy reads `${ESCALATION_WEBHOOK}` and is resolved from the
+environment at load time: an alert endpoint is a bearer token in URL form, so it belongs in
+`.env` beside the API keys rather than in a committed file.
+
+Both write paths — `pnpm tick` without `--dry-run`, and the scheduled `POST /tick` — refuse
+to start when that variable is unset or points at a placeholder host, before a single chain
+read. An agent that can throttle someone's pay must be able to tell a human when it stops.
+A dry run escalates to nobody, so it runs with either.
+
+Delivery is at-least-once: retried on a network error, a 429 or a 5xx, never on a 4xx, and
+abandoned after the attempt budget rather than holding the tick open. A Discord or Slack URL
+receives the body that destination accepts; anything else receives the raw `{kind, detail}`.
+An escalation that still could not be delivered is recorded `delivered: false`, printed as a
+loud line by the CLI, and shown in the report — the one thing that never happens is a
+breach nobody was told about.
 
 ### On a schedule
 
