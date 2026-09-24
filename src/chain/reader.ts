@@ -36,9 +36,10 @@ export type ReaderDeps = {
    * itself, which survives into a thrown `HttpRequestError`'s message --
    * viem's own credential stripping only handles basic-auth. Optional so
    * every existing test double that has no secret to redact keeps compiling
-   * unchanged.
+   * unchanged, and accepts a list so a quorum client's several endpoints are
+   * all stripped, not just the first.
    */
-  rpcUrl?: string;
+  rpcUrl?: string | readonly string[];
 };
 
 /**
@@ -56,7 +57,8 @@ export async function readFacts(
   // Every `ReadFailure.reason` goes through this, not `reason(error)` alone:
   // a hosted RPC provider's key travels in the URL path, not basic-auth, so
   // it survives into a thrown HttpRequestError's message otherwise.
-  const safeReason = (error: unknown) => redact(reason(error), [deps.rpcUrl]);
+  const secrets = deps.rpcUrl === undefined ? [] : [deps.rpcUrl].flat();
+  const safeReason = (error: unknown) => redact(reason(error), secrets);
 
   const balanceResult = await deps.client
     .readContract({

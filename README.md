@@ -128,6 +128,19 @@ pnpm tick policies/treasury.sepolia.yaml             # decide and write
 
 `--dry-run` reads the chain and prints the decision it would act on. It posts nothing.
 
+### Reading the chain twice
+
+`SEPOLIA_RPC_URL` accepts several comma-separated endpoints. With one, nothing changes.
+With two or more, every read is asked of all of them and the tick proceeds only when they
+agree — a failing endpoint is tolerated, a disagreeing one stops the tick with no decision
+taken.
+
+This is not caution for its own sake: one endpoint once answered "not found" for a
+transaction the others had. A replica running behind announces itself in no way at all, and
+a keeper that believes the first answer it receives can throttle someone's pay on a stale
+view of the chain. Two against one is still a disagreement, because replicas lag in groups
+and a flow rate is not a vote.
+
 ### Checking that it all still holds
 
 A green test suite proves the code agrees with itself. It says nothing about a route that

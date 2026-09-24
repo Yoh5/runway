@@ -180,6 +180,33 @@ describe("readFacts", () => {
     expect(readError.failures[0]?.reason).toContain("[redacted]");
   });
 
+  it("redacts every configured endpoint's key, not only the first", async () => {
+    // With several endpoints behind a quorum client, a failure text can carry
+    // any of their URLs -- the disagreement message carries all of them.
+    const KEY_A = "sk-fake-key-aaaa";
+    const KEY_B = "sk-fake-key-bbbb";
+    const urls = [
+      `https://eth-sepolia.g.alchemy.com/v2/${KEY_A}`,
+      `https://sepolia.infura.io/v3/${KEY_B}`,
+    ];
+    const error = await readFacts(
+      {
+        client: {
+          readContract: async () => {
+            throw new Error(`endpoints disagree: ${urls.join(" vs ")}`);
+          },
+        },
+        rpcUrl: urls,
+      },
+      policy(),
+      1_700_000_000,
+    ).catch((e: unknown) => e as ReadIncompleteError);
+
+    const readError = error as ReadIncompleteError;
+    expect(readError.message).not.toContain(KEY_A);
+    expect(readError.message).not.toContain(KEY_B);
+  });
+
   it("fails closed when getAccountFlowrate fails, exactly as a failing getFlowInfo does", async () => {
     await expect(
       readFacts(

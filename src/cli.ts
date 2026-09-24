@@ -4,7 +4,8 @@ import { pathToFileURL } from "node:url";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import { CFA_FORWARDER_ADDRESS } from "./chain/abi.js";
-import { readFacts, type ReaderDeps } from "./chain/reader.js";
+import { createQuorumClient } from "./chain/quorum.js";
+import { readFacts, type PublicClientLike, type ReaderDeps } from "./chain/reader.js";
 import { executeAdjustment, type ExecutorDeps, type SimulateFn } from "./keeperhub/execute.js";
 import { decide } from "./policy/decide.js";
 import { loadPolicy } from "./policy/load.js";
@@ -97,22 +98,41 @@ export async function readRuns(dirPath: string): Promise<RunRecord[]> {
   return records;
 }
 
+/**
+ * `SEPOLIA_RPC_URL` may hold several comma-separated endpoints. One is the
+ * ordinary case and behaves exactly as before; two or more are read through
+ * `createQuorumClient`, which answers only when they agree. A replica that
+ * lags announces itself in no way at all, and a keeper that believes the
+ * first answer it gets can throttle someone's pay on a stale view.
+ */
+export function rpcUrls(): string[] {
+  return requireEnv("SEPOLIA_RPC_URL")
+    .split(",")
+    .map((url) => url.trim())
+    .filter((url) => url.length > 0);
+}
+
 export function buildReaderDeps(): ReaderDeps {
-  const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
-  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+  const urls = rpcUrls();
   // viem's own `readContract` overloads are generic in a way `PublicClientLike`
   // (deliberately narrow, so a test double can implement it with no viem
   // import at all) does not accept structurally. The adapter is the one place
   // that gap is bridged, with a cast that changes no behaviour at runtime.
-  return {
-    client: {
-      readContract: (args) =>
+  const clients = urls.map((url) => {
+    const client = createPublicClient({ chain: sepolia, transport: http(url) });
+    return {
+      readContract: (args: Parameters<PublicClientLike["readContract"]>[0]) =>
         client.readContract(args as unknown as Parameters<typeof client.readContract>[0]),
-    },
+    };
+  });
+
+  return {
+    client: createQuorumClient(clients),
     // Carried purely so a failed read can redact a hosted provider's key back
     // out of the error text: it travels baked into the URL path, which
-    // survives into a thrown HttpRequestError's message untouched.
-    rpcUrl,
+    // survives into a thrown HttpRequestError's message untouched. All of
+    // them, since a disagreement message names every endpoint.
+    rpcUrl: urls,
   };
 }
 
@@ -120,7 +140,10 @@ export function buildExecutorDeps(): ExecutorDeps {
   const apiKey = requireEnv("KEEPERHUB_API_KEY");
   const baseUrl = requireEnv("KEEPERHUB_BASE_URL");
   const flowOperator = requireEnv("KEEPERHUB_FLOW_OPERATOR_ADDRESS");
-  const rpcUrl = requireEnv("SEPOLIA_RPC_URL");
+  // The simulate check runs against the first endpoint only: it is a local
+  // dry run whose answer is checked again by the chain itself on broadcast,
+  // so a lagging replica costs a refused write, never a wrong one.
+  const [rpcUrl = ""] = rpcUrls();
   const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
 
   const simulate: SimulateFn = async ({ token, sender, receiver, flowRateWeiPerSec }) => {
