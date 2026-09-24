@@ -50,4 +50,29 @@ export const CFA_FORWARDER_READ_ABI = [
 ] as const;
 
 /** Superfluid pins both forwarders to one address on every chain it supports. */
+/**
+ * Read-only view of the mandate itself, used by the conformance checks rather
+ * than by a tick: `permissions` is the bitfield the treasury granted (6 =
+ * update | delete, never create) and `flowrateAllowance` the total rate the
+ * operator may command. A tick never needs to ask -- a revoked mandate simply
+ * reverts the write -- but a scheduled check that reads it turns a silent
+ * revocation into something a human is told about.
+ */
+export const CFA_FORWARDER_MANDATE_ABI = [
+  {
+    type: "function",
+    name: "getFlowOperatorPermissions",
+    stateMutability: "view",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "sender", type: "address" },
+      { name: "flowOperator", type: "address" },
+    ],
+    outputs: [
+      { name: "permissions", type: "uint8" },
+      { name: "flowrateAllowance", type: "int96" },
+    ],
+  },
+] as const;
+
 export const CFA_FORWARDER_ADDRESS = "0xcfA132E353cB4E398080B9700609bb008eceB125" as const;

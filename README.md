@@ -119,12 +119,34 @@ cp .env.example .env    # then fill it in; nothing is read from anywhere else
 pnpm check-config       # env presence and policy sanity, prints no secret values
 pnpm resolve            # resolves token, host and deposit off chain
 pnpm verify-rates       # live rate vs committed rate vs floor, per stream
+pnpm conformance        # live checks: the API, the mandate, the recorded executions
 
 pnpm tick policies/treasury.sepolia.yaml --dry-run   # decide, execute nothing
 pnpm tick policies/treasury.sepolia.yaml             # decide and write
 ```
 
 `--dry-run` reads the chain and prints the decision it would act on. It posts nothing.
+
+### Checking that it all still holds
+
+A green test suite proves the code agrees with itself. It says nothing about a route that
+was renamed last week, a mandate the treasury revoked this morning, or an execution record
+that no longer resolves. `pnpm conformance` asks the live deployment and the live chain:
+
+```
+PASS  keeperhub-route-exists            route present, anonymous caller refused with http 401
+PASS  keeperhub-unknown-action-refused  an unknown action is a 404, so the 401 above is authentication and not a catch-all
+PASS  keeperhub-execution-retrievable   3 recorded execution(s) still retrievable, same hashes
+PASS  mandate-permissions               permissions 6: update and delete, never create
+PASS  mandate-allowance                 allowance 289303826648 wei/sec against 289303826648 committed
+PASS  forwarder-deployed                CFAv1Forwarder holds 11346 characters of bytecode
+```
+
+Every probe is read-only: the two POSTs carry no credentials and an empty body, so nothing
+it does can move a rate or spend gas, and it is safe to run on a schedule. It exits
+non-zero when a check fails. `mandate-permissions` fails on a mandate that was *widened*
+as loudly as on one that was revoked — a create bit is the one thing this keeper must
+never hold.
 
 ### Where escalations go
 

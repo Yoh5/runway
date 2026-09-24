@@ -12,6 +12,7 @@
     "plan-streams": "node --env-file=.env --import tsx scripts/plan-streams.ts",
     "plan-breach": "node --env-file=.env --import tsx scripts/plan-breach.ts",
     "verify-rates": "node --env-file=.env --import tsx scripts/verify-rates.ts",
+    "conformance": "node --env-file=.env --import tsx scripts/conformance.ts",
     "capture-evidence": "tsx scripts/capture-evidence.ts",
     "test": "vitest run",
     "test:watch": "vitest",
