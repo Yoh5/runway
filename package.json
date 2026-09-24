@@ -11,6 +11,7 @@
     "resolve": "node --env-file=.env --import tsx scripts/resolve-sepolia.ts",
     "plan-streams": "node --env-file=.env --import tsx scripts/plan-streams.ts",
     "plan-breach": "node --env-file=.env --import tsx scripts/plan-breach.ts",
+    "plan-restore": "node --env-file=.env --import tsx scripts/plan-restore.ts",
     "verify-rates": "node --env-file=.env --import tsx scripts/verify-rates.ts",
     "conformance": "node --env-file=.env --import tsx scripts/conformance.ts",
     "capture-evidence": "tsx scripts/capture-evidence.ts",

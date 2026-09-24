@@ -120,6 +120,7 @@ pnpm check-config       # env presence and policy sanity, prints no secret value
 pnpm resolve            # resolves token, host and deposit off chain
 pnpm verify-rates       # live rate vs committed rate vs floor, per stream
 pnpm conformance        # live checks: the API, the mandate, the recorded executions
+pnpm plan-restore       # how much to wrap before a tick would restore, and what it would decide
 
 pnpm tick policies/treasury.sepolia.yaml --dry-run   # decide, execute nothing
 pnpm tick policies/treasury.sepolia.yaml             # decide and write
@@ -147,6 +148,24 @@ it does can move a rate or spend gas, and it is safe to run on a schedule. It ex
 non-zero when a check fails. `mandate-permissions` fails on a mandate that was *widened*
 as loudly as on one that was revoked — a create bit is the one thing this keeper must
 never hold.
+
+### The half that has not fired
+
+`restore` is implemented and property-tested, and it has never run on chain. Saying so is
+cheaper than implying otherwise, and `pnpm plan-restore` is what turns the run that would
+change it into a decision rather than a guess: it reads the live balance and rates, prints
+the balance the policy's band actually requires — measured at the committed rates, not at
+today's degraded ones — and hands that balance to the real `decide()` so the printed
+outcome cannot drift from what a tick would do.
+
+It reads the available balance raw rather than through the chain reader, which clamps a
+negative one to zero on purpose. The demo treasury on Sepolia is currently **insolvent**:
+it was drained to stage the breach on 8 September, the shed took every stream to its floor,
+and nobody refilled it, so the balance has been below zero for days and anyone may
+liquidate it. The three rates are still exactly at their floors — that part is unchanged
+and still verifiable — but a wrap has to refill the hole before a single wei counts toward
+the band, and sizing one against the clamped number would understate it by exactly that
+hole.
 
 ### Where escalations go
 
