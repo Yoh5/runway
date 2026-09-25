@@ -1,0 +1,49 @@
+# Everything here runs without a single secret, on purpose: a contributor who
+# forks this repository gets the same green or the same red as its author. The
+# checks that need credentials -- `pnpm conformance` against the live KeeperHub
+# deployment, and any tick -- are deliberately not here. A workflow that needs
+# a key to pass is a workflow that fails for everyone else.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Types
+        run: pnpm typecheck
+
+      - name: Lint and format
+        run: pnpm check
+
+      - name: Tests
+        run: pnpm test
+
+      # The evidence gate is separate from the main suite on purpose: it reads
+      # the published figures back out of the recorded run, so a number that
+      # drifts in the documentation fails here rather than being noticed by a
+      # reader one day.
+      - name: Evidence
+        run: pnpm test:evidence
+
+      # Re-decides every recorded run from its own facts and checks that every
+      # write maps to an adjustment the decision named. Reads files only.
+      - name: Run records
+        run: pnpm verify-record

@@ -1,5 +1,7 @@
 # Runway
 
+[![ci](https://github.com/Yoh5/runway/actions/workflows/ci.yml/badge.svg)](https://github.com/Yoh5/runway/actions/workflows/ci.yml)
+
 **A keeper that decides who keeps getting paid when a Superfluid treasury runs short — and executes that decision through KeeperHub under a mandate it cannot exceed.**
 
 A treasury pays people with Superfluid streams. Money leaves the account every second, and
@@ -259,6 +261,12 @@ pnpm typecheck && pnpm check
 
 The evidence gate is excluded from `pnpm test` deliberately: a red test living inside the
 main suite teaches people to ignore red.
+
+CI runs the four checks that need no credentials — types, lint, tests, evidence — plus
+`pnpm verify-record`. `pnpm conformance` is deliberately not in CI: it needs an API key and
+a live network, and a workflow that needs a secret to pass is a workflow that fails for
+everyone who forks the repository. It is meant to run on a schedule, against the real
+deployment, by whoever operates the keeper.
 
 ## What this is not
 
