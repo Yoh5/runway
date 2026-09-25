@@ -354,3 +354,30 @@ describe("runCli — write mode refuses to escalate into the void", () => {
     expect(loud[0]).toMatch(/floors-exceed-budget/);
   });
 });
+
+describe("runCli — a tick checks its own record before it walks away", () => {
+  it("verifies the record it just wrote and says so", async () => {
+    const lines: string[] = [];
+    const deps = stubDeps({
+      readPolicy: async () => policy({ escalation: { webhook: "https://hooks.runway-ops.dev/x" } }),
+      log: (message) => lines.push(message),
+    });
+
+    await runCli(deps, ["policy.yaml"]);
+
+    expect(lines.some((line) => /record verified/i.test(line))).toBe(true);
+  });
+
+  it("says which decision was verified, not merely that something was", async () => {
+    const lines: string[] = [];
+    const deps = stubDeps({
+      readPolicy: async () => policy({ escalation: { webhook: "https://hooks.runway-ops.dev/x" } }),
+      log: (message) => lines.push(message),
+    });
+
+    await runCli(deps, ["policy.yaml"]);
+
+    const verified = lines.find((line) => /record verified/i.test(line)) ?? "";
+    expect(verified).toMatch(/reduce/);
+  });
+});

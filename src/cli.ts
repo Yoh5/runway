@@ -17,6 +17,7 @@ import { assertDeliverableEscalation, createWebhookNotifier } from "./runner/not
 import { fromSerialisable, toSerialisable } from "./runner/record.js";
 import type { RunRecord } from "./runner/record.js";
 import { runOnce, type RunDeps } from "./runner/run.js";
+import { verifyRecord } from "./runner/verify.js";
 import { resolveVersion } from "./runner/version.js";
 
 /**
@@ -297,6 +298,17 @@ export async function runCli(deps: CliDeps, args: string[]): Promise<Decision | 
   const filePath = path.join(runsDir, fileName);
   await deps.writeFile(filePath, JSON.stringify(toSerialisable(record), null, 2));
   deps.log(filePath);
+
+  // The tick checks its own work before walking away. `decide` is pure, so
+  // this must pass -- which is exactly why it is worth running: the day it
+  // does not, something has gone wrong that no other test would catch, and
+  // the operator learns it now rather than at the next audit.
+  const verdict = verifyRecord(record, policy);
+  deps.log(
+    verdict.ok
+      ? `record verified — ${verdict.detail}`
+      : `RECORD DOES NOT VERIFY — ${verdict.detail}`,
+  );
 
   // An escalation the record calls undelivered has reached nobody. It is in
   // the JSON and in the report, but both are read after the fact — so say it
