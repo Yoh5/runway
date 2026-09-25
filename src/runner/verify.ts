@@ -82,8 +82,15 @@ export function verifyRecord(record: RunRecord, policy: Policy): RecordVerdict {
     );
   }
 
+  // A record without a digest was checked against whichever policy the caller
+  // happened to pass. That check is still worth making, but a reader must not
+  // mistake it for proof that this policy is the one that ran.
+  const assumed = record.policyDigest
+    ? ""
+    : " (no policy digest recorded: checked against an assumed policy)";
+
   return verdict(
     true,
-    `${record.decision.kind}, ${record.decision.adjustments.length} adjustment(s), ${record.outcomes.length} write(s), all mapped`,
+    `${record.decision.kind}, ${record.decision.adjustments.length} adjustment(s), ${record.outcomes.length} write(s), all mapped${assumed}`,
   );
 }

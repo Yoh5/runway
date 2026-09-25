@@ -169,6 +169,26 @@ function renderOperatingRecord(records: RunRecord[]): string {
     `${undecided} no decision (read failed)`,
   ].join(", ");
 
+  // A version gap is the first thing an auditor looks for: a run whose code
+  // nobody can name, or a policy that changed mid-series without anyone
+  // saying so. Both are visible here or they are visible nowhere.
+  const versions = [...new Set(records.map((r) => r.agentVersion).filter(Boolean))] as string[];
+  const unstamped = records.filter((r) => !r.agentVersion).length;
+  const versionLine = [
+    versions.length === 0 ? "none recorded" : versions.map(escapeHtml).join(", "),
+    unstamped > 0 ? `${unstamped} run${unstamped === 1 ? "" : "s"} unstamped` : "",
+  ]
+    .filter(Boolean)
+    .join(" — ");
+
+  const digests = [...new Set(records.map((r) => r.policyDigest).filter(Boolean))] as string[];
+  const policyLine =
+    digests.length === 0
+      ? "none recorded"
+      : digests.length === 1
+        ? `one policy, ${escapeHtml(digests[0] as string)}`
+        : `${digests.length} policies in this series`;
+
   const escalationLine =
     escalations.length === 0
       ? "0 escalations"
@@ -187,6 +207,8 @@ function renderOperatingRecord(records: RunRecord[]): string {
   <li>Decisions: ${decisions}</li>
   <li>Writes: ${writes.landed} landed, ${writes.refused} refused, ${writes.unresolved} unresolved</li>
   <li>Escalations: ${escalationLine}</li>
+  <li>Decided by: ${versionLine}</li>
+  <li>Policy: ${policyLine}</li>
 </ul>`;
 }
 

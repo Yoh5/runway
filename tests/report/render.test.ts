@@ -347,3 +347,39 @@ describe("renderReport -- the operating record across runs", () => {
     expect(html).toMatch(/all .* delivered|1[^<]*delivered/i);
   });
 });
+
+describe("renderReport -- which code and which policy decided", () => {
+  it("names the versions that decided, because a version gap is what an auditor looks for", () => {
+    const html = renderReport([
+      record({ startedAt: "2026-09-10T12:00:00.000Z", agentVersion: "cb01834" }),
+      record({ startedAt: "2026-09-11T12:00:00.000Z", agentVersion: "a438c15" }),
+      record({ startedAt: "2026-09-12T12:00:00.000Z", agentVersion: "a438c15" }),
+    ]);
+    expect(html).toContain("cb01834");
+    expect(html).toContain("a438c15");
+  });
+
+  it("counts the runs that carry no version rather than passing over them", () => {
+    const html = renderReport([
+      record({ startedAt: "2026-09-10T12:00:00.000Z" }),
+      record({ startedAt: "2026-09-11T12:00:00.000Z", agentVersion: "a438c15" }),
+    ]);
+    expect(html).toMatch(/1[^<]*unstamped/i);
+  });
+
+  it("says when every run decided under the same policy", () => {
+    const html = renderReport([
+      record({ startedAt: "2026-09-10T12:00:00.000Z", policyDigest: "sha256:aaa" }),
+      record({ startedAt: "2026-09-11T12:00:00.000Z", policyDigest: "sha256:aaa" }),
+    ]);
+    expect(html).toMatch(/one policy|1 policy/i);
+  });
+
+  it("says how many policies were in play when they differ", () => {
+    const html = renderReport([
+      record({ startedAt: "2026-09-10T12:00:00.000Z", policyDigest: "sha256:aaa" }),
+      record({ startedAt: "2026-09-11T12:00:00.000Z", policyDigest: "sha256:bbb" }),
+    ]);
+    expect(html).toMatch(/2 policies/i);
+  });
+});

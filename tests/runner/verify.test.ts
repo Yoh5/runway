@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { decide } from "../../src/policy/decide.js";
 import type { Address, Facts, Policy } from "../../src/policy/types.js";
 import type { RunRecord } from "../../src/runner/record.js";
-import { verifyRecord } from "../../src/runner/verify.js";
+import { policyDigest, verifyRecord } from "../../src/runner/verify.js";
 
 const CRIT = "0x1111111111111111111111111111111111111111" as Address;
 const STD = "0x2222222222222222222222222222222222222222" as Address;
@@ -156,5 +156,19 @@ describe("verifyRecord -- what cannot be checked", () => {
     const verdict = verifyRecord({ ...record(), policyDigest: "sha256:not-this-one" }, policy());
     expect(verdict.ok).toBe(false);
     expect(verdict.detail).toMatch(/digest|policy/i);
+  });
+});
+
+describe("verifyRecord -- what the record does not claim", () => {
+  it("says a passing record was checked against an assumed policy when it carries no digest", () => {
+    const verdict = verifyRecord(record(), policy());
+    expect(verdict.ok).toBe(true);
+    expect(verdict.detail).toMatch(/no policy digest|assumed/i);
+  });
+
+  it("stays quiet about the digest when the record carries a matching one", () => {
+    const verdict = verifyRecord({ ...record(), policyDigest: policyDigest(policy()) }, policy());
+    expect(verdict.ok).toBe(true);
+    expect(verdict.detail).not.toMatch(/assumed/i);
   });
 });
