@@ -93,36 +93,84 @@ const scenario = fc
       }),
   );
 
+/**
+ * How many generated scenarios actually reached a property's assertions.
+ *
+ * Three of these properties open with `if (...) return`, and the other three
+ * assert inside a loop over `d.adjustments`. Either way, a scenario the
+ * property does not apply to counts as a pass — so a property can hold
+ * perfectly while checking nothing at all.
+ *
+ * Measured today, every one of them is exercised: the escalating-reduce
+ * branch in 22 scenarios out of 100, the tier order in 38, the non-escalating
+ * reduce in 85 out of 2000. Nothing kept them there. A change to the
+ * generator, or to `decide`, could take any of them to zero and the suite
+ * would stay green — a test that cannot fail, which is the thing this
+ * repository keeps finding in itself.
+ *
+ * So each property states the floor it must keep clearing. The floors are set
+ * well under what is measured, because fast-check draws a new seed on every
+ * run and the counts move; they are a tripwire against collapse, not a target.
+ */
+function reaches(minimum: number) {
+  let count = 0;
+  return {
+    hit: () => {
+      count += 1;
+    },
+    orItCheckedNothing: () => {
+      if (count < minimum) {
+        throw new Error(
+          `this property reached its assertions in only ${count} scenario(s), against a floor of ` +
+            `${minimum}: it is passing because it no longer applies to what the generator ` +
+            "produces, not because the invariant holds",
+        );
+      }
+    },
+  };
+}
+
 describe("policy invariants", () => {
   it("1: never below a floor", () => {
+    const reached = reaches(20);
     fc.assert(
       fc.property(scenario, ({ policy, facts }) => {
         const d = decide(facts, policy);
+        if (d.adjustments.length > 0) reached.hit();
         for (const a of d.adjustments) {
           const r = policy.recipients.find((x) => x.address === a.receiver);
           expect(a.toRateWeiPerSec >= (r?.floorRateWeiPerSec ?? 0n)).toBe(true);
         }
       }),
     );
+    reached.orItCheckedNothing();
   });
 
   it("2: never above the committed rate", () => {
+    const reached = reaches(20);
     fc.assert(
       fc.property(scenario, ({ policy, facts }) => {
         const d = decide(facts, policy);
+        if (d.adjustments.length > 0) reached.hit();
         for (const a of d.adjustments) {
           const r = policy.recipients.find((x) => x.address === a.receiver);
           expect(a.toRateWeiPerSec <= (r?.committedRateWeiPerSec ?? 0n)).toBe(true);
         }
       }),
     );
+    reached.orItCheckedNothing();
   });
 
   it("3a: after a reduce with no escalation, the RESULTING total outflow fits the budget", () => {
+    // 2000 runs, and only some 85 of them are a reduce that did not escalate:
+    // the extra runs buy far less coverage of this branch than the number
+    // suggests, which is exactly why the count is stated rather than assumed.
+    const reached = reaches(20);
     fc.assert(
       fc.property(scenario, ({ policy, facts }) => {
         const d = decide(facts, policy);
         if (d.kind !== "reduce" || d.escalation !== null) return;
+        reached.hit();
         const after = new Map(facts.streams.map((s) => [s.receiver, s.flowRateWeiPerSec]));
         for (const a of d.adjustments) after.set(a.receiver, a.toRateWeiPerSec);
         const listedTotal = [...after.values()].reduce((sum, r) => sum + r, 0n);
@@ -136,13 +184,16 @@ describe("policy invariants", () => {
       }),
       { numRuns: 2000 },
     );
+    reached.orItCheckedNothing();
   });
 
   it("3b: after a reduce that escalates, every stream sits at or below its floor", () => {
+    const reached = reaches(5);
     fc.assert(
       fc.property(scenario, ({ policy, facts }) => {
         const d = decide(facts, policy);
         if (d.kind !== "reduce" || d.escalation === null) return;
+        reached.hit();
         const after = new Map(facts.streams.map((s) => [s.receiver, s.flowRateWeiPerSec]));
         for (const a of d.adjustments) after.set(a.receiver, a.toRateWeiPerSec);
         for (const r of policy.recipients) {
@@ -150,13 +201,16 @@ describe("policy invariants", () => {
         }
       }),
     );
+    reached.orItCheckedNothing();
   });
 
   it("4: a tier is touched only once every lower tier sits at its floor", () => {
+    const reached = reaches(10);
     fc.assert(
       fc.property(scenario, ({ policy, facts }) => {
         const d = decide(facts, policy);
         if (d.kind !== "reduce") return;
+        reached.hit();
         const after = new Map(facts.streams.map((s) => [s.receiver, s.flowRateWeiPerSec]));
         for (const a of d.adjustments) after.set(a.receiver, a.toRateWeiPerSec);
         for (const a of d.adjustments) {
@@ -170,6 +224,7 @@ describe("policy invariants", () => {
         }
       }),
     );
+    reached.orItCheckedNothing();
   });
 
   it("5: identical inputs produce identical decisions", () => {
@@ -185,14 +240,17 @@ describe("policy invariants", () => {
   });
 
   it("6: no adjustment is ever a no-op write", () => {
+    const reached = reaches(20);
     fc.assert(
       fc.property(scenario, ({ policy, facts }) => {
         const d = decide(facts, policy);
+        if (d.adjustments.length > 0) reached.hit();
         for (const a of d.adjustments) {
           expect(a.fromRateWeiPerSec).not.toBe(a.toRateWeiPerSec);
         }
         if (d.kind === "hold") expect(d.adjustments).toEqual([]);
       }),
     );
+    reached.orItCheckedNothing();
   });
 });
