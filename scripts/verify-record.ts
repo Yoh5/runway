@@ -13,14 +13,15 @@
  *
  *   node --import tsx scripts/verify-record.ts [policy.yaml] [runs-dir]
  *
- * Exits non-zero if any record fails, so a scheduler can alert on it.
+ * Exits non-zero if any record fails, so a scheduler can alert on it — and
+ * also when a directory named on the command line turns out to hold nothing,
+ * because a gate that passes on an empty room is not a gate.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
-import path from "node:path";
 import { loadPolicy } from "../src/policy/load.js";
-import { fromSerialisable } from "../src/runner/record.js";
-import { policyDigest, verifyRecord } from "../src/runner/verify.js";
+import { policyDigest } from "../src/runner/verify.js";
+import { verifyRunsDirectory } from "./lib/verify-record.js";
 
 const POLICY_PATH = process.argv[2] ?? "policies/treasury.sepolia.yaml";
 const RUNS_DIR = process.argv[3] ?? "runs";
@@ -31,31 +32,21 @@ function main(): void {
   console.log(`digest: ${policyDigest(policy)}`);
   console.log("");
 
-  let entries: string[];
-  try {
-    entries = readdirSync(RUNS_DIR).filter((name) => name.endsWith(".json"));
-  } catch {
-    console.log(`no runs directory at ${RUNS_DIR}; nothing to verify`);
-    return;
-  }
+  const outcome = verifyRunsDirectory({
+    policy,
+    dir: RUNS_DIR,
+    explicit: process.argv[3] !== undefined,
+    list: (dir) => readdirSync(dir),
+    read: (file) => readFileSync(file, "utf-8"),
+  });
 
-  const verdicts = entries
-    .sort()
-    .map((entry) =>
-      verifyRecord(
-        fromSerialisable(JSON.parse(readFileSync(path.join(RUNS_DIR, entry), "utf-8"))),
-        policy,
-      ),
-    );
-
-  for (const verdict of verdicts) {
+  for (const verdict of outcome.verdicts) {
     console.log(`${verdict.ok ? "PASS" : "FAIL"}  ${verdict.startedAt}  ${verdict.detail}`);
   }
 
-  const failed = verdicts.filter((v) => !v.ok).length;
-  console.log("");
-  console.log(`${verdicts.length - failed}/${verdicts.length} records verified`);
-  if (failed > 0) process.exitCode = 1;
+  if (outcome.verdicts.length > 0) console.log("");
+  console.log(outcome.summary);
+  if (!outcome.ok) process.exitCode = 1;
 }
 
 try {

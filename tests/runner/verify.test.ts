@@ -172,3 +172,36 @@ describe("verifyRecord -- what the record does not claim", () => {
     expect(verdict.detail).not.toMatch(/assumed/i);
   });
 });
+
+describe("policyDigest -- what the digest is allowed to depend on", () => {
+  it("ignores the escalation webhook, which decides nothing", () => {
+    // Found by a real tick: the tick resolved ${ESCALATION_WEBHOOK} from the
+    // environment and hashed it in, then `verify-record` -- run without that
+    // variable -- computed a different digest and rejected an honest record.
+    // A digest over where alerts are sent is a digest that changes per
+    // operator and per shell.
+    const a = policy({ escalation: { webhook: "https://hooks.runway-ops.dev/one" } });
+    const b = policy({ escalation: { webhook: "https://discord.com/api/webhooks/2/xyz" } });
+
+    expect(policyDigest(a)).toBe(policyDigest(b));
+  });
+
+  it("still changes when a floor changes, which decides everything", () => {
+    const base = policy();
+    const [first, ...rest] = base.recipients;
+    if (!first) throw new Error("fixture must have a recipient");
+    const lowered = policy({
+      recipients: [{ ...first, floorRateWeiPerSec: first.floorRateWeiPerSec - 1n }, ...rest],
+    });
+
+    expect(policyDigest(lowered)).not.toBe(policyDigest(base));
+  });
+
+  it("still changes when a runway threshold changes", () => {
+    expect(policyDigest(policy({ minRunwaySec: 999n }))).not.toBe(policyDigest(policy()));
+  });
+
+  it("is stable across calls, so a record written today verifies tomorrow", () => {
+    expect(policyDigest(policy())).toBe(policyDigest(policy()));
+  });
+});

@@ -10,7 +10,14 @@ import type { RunRecord } from "./record.js";
  * otherwise make an honest record look wrong, and a dishonest one look right.
  */
 export function policyDigest(policy: Policy): string {
-  const canonical = JSON.stringify(policy, (_key, value: unknown) =>
+  // Everything that decides, and nothing else. `escalation` is delivery
+  // configuration: where an alert is sent has no influence on any rate, and
+  // its webhook is resolved from the environment -- so hashing it made the
+  // digest depend on which shell computed it. A real tick stamped a record
+  // with the webhook set, and `verify-record`, run without it, rejected an
+  // honest record. Two operators of the same policy must agree on its digest.
+  const { escalation: _delivery, ...decides } = policy;
+  const canonical = JSON.stringify(decides, (_key, value: unknown) =>
     typeof value === "bigint" ? value.toString() : value,
   );
   return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;

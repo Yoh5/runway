@@ -46,5 +46,11 @@ jobs:
 
       # Re-decides every recorded run from its own facts and checks that every
       # write maps to an adjustment the decision named. Reads files only.
+      #
+      # Pointed at docs/evidence on purpose. `runs/` is gitignored, so on a
+      # checkout this step used to find no directory, print "nothing to
+      # verify" and go green for every change ever made -- a gate that could
+      # not fail. docs/evidence/run.json is the live Sepolia demonstration,
+      # committed, and naming the directory makes an empty one an error.
       - name: Run records
-        run: pnpm verify-record
+        run: pnpm verify-record policies/treasury.sepolia.yaml docs/evidence
