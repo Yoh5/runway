@@ -86,6 +86,14 @@ function stubDeps(over: Partial<CliDeps> = {}): CliDeps {
     now: () => 1_700_000_000,
     buildReaderDeps: (): ReaderDeps => ({ client: unusedClient() }),
     readFacts: async () => facts(15_000n, [100n, 100n, 100n]),
+    // Ces tests ecrivent a travers un faux executeur : il n y a pas de chaine
+    // a relire. Un bouchon qui pretendrait confirmer mentirait ; celui-ci dit
+    // ce qui est vrai — la lecture est impossible — et le runner l enregistre
+    // comme non confirme sans escalader. Le desaccord chaine/recu est couvert
+    // dans tests/runner/confirm.test.ts.
+    readFlowRate: async () => {
+      throw new Error("no chain in this test");
+    },
     buildExecutorDeps: fakeExecutorDeps,
     execute: async () => LANDED,
     notify: async () => {},

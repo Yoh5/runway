@@ -161,3 +161,38 @@ export async function readFacts(
     unlistedOutflowWeiPerSec,
   };
 }
+
+/**
+ * Reads one receiver's flow rate, at the chain head.
+ *
+ * Used after a write, to confirm the stream actually moved — `readFacts`
+ * cannot serve here because it pins every read to one block for consistency,
+ * and the block this run wants is whichever one is latest now, after its own
+ * transactions landed.
+ *
+ * Deliberately unpinned and deliberately narrow: one call, one receiver, no
+ * fail-closed bundle. A failure here is not a failure to decide — the
+ * decision was already taken and executed — so it throws and the caller
+ * records it as "could not confirm" rather than as a broken run.
+ */
+export async function readFlowRate(
+  deps: ReaderDeps,
+  policy: Policy,
+  receiver: `0x${string}`,
+): Promise<bigint> {
+  try {
+    const flow = await deps.client.readContract({
+      address: CFA_FORWARDER_ADDRESS,
+      abi: CFA_FORWARDER_READ_ABI,
+      functionName: "getFlowInfo",
+      args: [policy.token, policy.sender, receiver],
+    });
+    const [, flowRate] = flow as readonly [bigint, bigint, bigint, bigint];
+    return flowRate;
+  } catch (error) {
+    // Same redaction as every other read in this file: a hosted provider's
+    // API key lives in the URL and survives into the thrown message.
+    const secrets = deps.rpcUrl === undefined ? [] : [deps.rpcUrl].flat();
+    throw new Error(redact(reason(error), secrets));
+  }
+}

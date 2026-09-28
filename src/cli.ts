@@ -6,7 +6,7 @@ import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import { CFA_FORWARDER_ADDRESS } from "./chain/abi.js";
 import { createQuorumClient } from "./chain/quorum.js";
-import { readFacts, type PublicClientLike, type ReaderDeps } from "./chain/reader.js";
+import { readFacts, readFlowRate, type PublicClientLike, type ReaderDeps } from "./chain/reader.js";
 import { executeAdjustment, type ExecutorDeps, type SimulateFn } from "./keeperhub/execute.js";
 import { decide } from "./policy/decide.js";
 import { loadPolicy } from "./policy/load.js";
@@ -212,6 +212,7 @@ export type CliDeps = {
   now: () => number;
   buildReaderDeps: () => ReaderDeps;
   readFacts: typeof readFacts;
+  readFlowRate: typeof readFlowRate;
   buildExecutorDeps: () => ExecutorDeps;
   execute: (
     deps: ExecutorDeps,
@@ -286,6 +287,11 @@ export async function runCli(deps: CliDeps, args: string[]): Promise<Decision | 
     execute: (p, adjustment, n) => deps.execute(executorDeps, p, adjustment, n),
     notify: deps.notify,
     version: deps.version,
+    // The chain read that follows the writes. Reusing `readerDeps` on
+    // purpose: the confirmation must come through the same quorum client and
+    // the same redaction as every other read, not a second path with its own
+    // trust assumptions.
+    confirm: (p, adjustment) => deps.readFlowRate(readerDeps, p, adjustment.receiver),
   };
 
   const record = await runOnce(runDeps, policy, nowSec);
@@ -327,6 +333,7 @@ function realCliDeps(): CliDeps {
     buildReaderDeps,
     readFacts,
     buildExecutorDeps,
+    readFlowRate,
     execute: executeAdjustment,
     notify: notifyWebhook,
     version: currentVersion,

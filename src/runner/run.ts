@@ -21,6 +21,14 @@ export type RunDeps = {
    * double keeps compiling.
    */
   version?: () => string;
+  /**
+   * Reads one receiver's flow rate back off the chain, after the writes.
+   *
+   * A receipt proves a transaction was included; only this proves the stream
+   * now runs at the rate that was asked for. Optional, so a caller that
+   * cannot read the chain still ticks — it simply claims less.
+   */
+  confirm?: (policy: Policy, adjustment: Adjustment) => Promise<bigint>;
 };
 
 /**
@@ -130,6 +138,51 @@ export async function runOnce(deps: RunDeps, policy: Policy, nowSec: number): Pr
         "one or more adjustments were refused by KeeperHub; see outcomes for detail",
       ),
     );
+  }
+
+  // Read the chain back, once every write has been attempted. Not between
+  // writes: a read taken mid-flight reports a chain that has not finished
+  // hearing this run, and would manufacture disagreements that do not exist.
+  //
+  // This is also the only thing that can settle an `unresolved` outcome. That
+  // status means "the treasury may have paid and this run cannot say" — and a
+  // rate that now reads as the target says it did.
+  if (deps.confirm) {
+    const disagreed: string[] = [];
+
+    for (const entry of record.outcomes) {
+      // A refusal sent nothing, so there is nothing to confirm; reading here
+      // would only spend an RPC call to be told what we already know.
+      if (entry.outcome.status === "refused") continue;
+
+      try {
+        const rate = await deps.confirm(policy, entry.adjustment);
+        const matches = rate === entry.adjustment.toRateWeiPerSec;
+        entry.confirmation = { rateWeiPerSec: rate, matches };
+        if (!matches) {
+          disagreed.push(
+            `${entry.adjustment.receiver} reads ${rate} where this run wrote ${entry.adjustment.toRateWeiPerSec}`,
+          );
+        }
+      } catch (error) {
+        // A read that failed is not a write that failed. The receipt already
+        // said the transaction landed; only our confirmation of it is
+        // missing. Recorded as unknown, and deliberately not escalated —
+        // paging a human on every RPC hiccup teaches them to ignore the pager.
+        entry.confirmation = { rateWeiPerSec: null, matches: null, detail: reason(error) };
+      }
+    }
+
+    if (disagreed.length > 0) {
+      record.escalations.push(
+        await deliverEscalation(
+          deps.notify,
+          policy.escalation.webhook,
+          "write-unconfirmed",
+          `the chain does not show what this run wrote: ${disagreed.join("; ")}`,
+        ),
+      );
+    }
   }
 
   return record;

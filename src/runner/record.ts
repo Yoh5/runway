@@ -4,6 +4,24 @@ import type { ExecutionOutcome } from "../keeperhub/execute.js";
 /** One escalation the run either delivered to the webhook or failed to. */
 export type RunEscalation = { kind: string; detail: string; delivered: boolean };
 
+/**
+ * What the chain said after the write, read back independently of the
+ * executor's receipt.
+ *
+ * A receipt proves a transaction was included; only this proves the stream
+ * now runs at the rate that was asked for. `matches` is deliberately
+ * three-valued: true (the chain agrees), false (it does not — the one state
+ * that escalates), and null (the read itself failed, so nothing is claimed
+ * either way).
+ */
+export type WriteConfirmation = {
+  /** The flow rate read off chain, or null when the read failed. */
+  rateWeiPerSec: bigint | null;
+  matches: boolean | null;
+  /** Why the read failed, present only when `matches` is null. */
+  detail?: string;
+};
+
 export type RunRecord = {
   startedAt: string;
   nowSec: number;
@@ -24,7 +42,13 @@ export type RunRecord = {
   agentVersion?: string;
   facts: Facts | null;
   decision: Decision | null;
-  outcomes: { adjustment: Adjustment; outcome: ExecutionOutcome }[];
+  outcomes: {
+    adjustment: Adjustment;
+    outcome: ExecutionOutcome;
+    /** Absent on runs recorded before the read-back existed, and on
+     *  refusals, where nothing was sent and so nothing can have changed. */
+    confirmation?: WriteConfirmation;
+  }[];
   escalations: RunEscalation[];
 };
 
@@ -98,10 +122,22 @@ function reviveDecision(raw: unknown): Decision | null {
   };
 }
 
-function reviveOutcomeEntry(raw: unknown): { adjustment: Adjustment; outcome: ExecutionOutcome } {
+function reviveConfirmation(raw: unknown): WriteConfirmation {
+  const r = asRecord(raw);
+  return {
+    rateWeiPerSec: r.rateWeiPerSec === null ? null : BigInt(r.rateWeiPerSec as string),
+    matches: r.matches as boolean | null,
+    ...(typeof r.detail === "string" ? { detail: r.detail } : {}),
+  };
+}
+
+function reviveOutcomeEntry(raw: unknown): RunRecord["outcomes"][number] {
   const r = asRecord(raw);
   return {
     adjustment: reviveAdjustment(r.adjustment),
+    ...(r.confirmation === undefined || r.confirmation === null
+      ? {}
+      : { confirmation: reviveConfirmation(r.confirmation) }),
     // ExecutionOutcome carries no bigint field of its own -- gasUsedWei and
     // effectiveGasPriceWei are decimal strings when present on the "landed"
     // variant (optional: KeeperHub's new response contract reports neither),
