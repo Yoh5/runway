@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runway - pitch deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+  /* Runway's own palette, taken from docs/brand/make-logo.py rather than chosen
+     again here: the dark card, the blue of what is still paid, and the amber of
+     the floor — the line the mandate stops at. The deck should look like the
+     logo it sits next to. */
+  @page { size: 1920px 1080px; margin: 0; }
+  :root {
+    --page: #0B0D10; --card: #14171B; --raised: #1A1F25;
+    --ink: #E6E6E6; --secondary: #9AA3AD; --separator: #2A2E33;
+    --brand: #6CB6FF; --floor: #F0B429; --ok: #7BE08F; --bad: #FF8F8F;
+    --serif: "Newsreader", Georgia, serif;
+    --sans: "Instrument Sans", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #3a3f45; }
+  body { font-family: var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  .slide {
+    width: 1920px; height: 1080px; background: var(--page); position: relative; overflow: hidden;
+    padding: 108px 128px; break-after: page; margin: 0 auto 40px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  @media print { html, body { background: #000; } .slide { margin: 0; } }
+  /* Sans ça, le `break-after` de la dernière diapo produit une page vide. */
+  .slide:last-of-type { break-after: auto; }
+
+  .mark { width: 46px; height: 46px; border-radius: 13px; overflow: hidden; flex: none; }
+  .mark img { width: 46px; height: 46px; display: block; }
+  .brand { position: absolute; left: 128px; bottom: 60px; display: flex; align-items: center; gap: 16px; font-size: 26px; font-weight: 600; }
+  .no { position: absolute; right: 128px; bottom: 66px; font-size: 22px; color: var(--secondary); font-variant-numeric: tabular-nums; }
+
+  h1 { font: 400 132px/1.02 var(--serif); letter-spacing: -0.03em; margin: 0; }
+  h2 { font: 400 70px/1.12 var(--serif); letter-spacing: -0.022em; margin: 0 0 40px; max-width: 1540px; text-wrap: balance; }
+  .kicker { font-size: 25px; font-weight: 600; color: var(--brand); margin: 0 0 22px; }
+  .lede { font-size: 37px; line-height: 1.4; color: var(--secondary); margin: 0; max-width: 1420px; text-wrap: pretty; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  em { font-style: normal; color: var(--brand); }
+  code { font-family: var(--mono); font-size: .92em; color: var(--brand); }
+
+  .cols { display: flex; gap: 32px; margin-top: 48px; }
+  .card { background: var(--card); border: 1px solid var(--separator); border-radius: 22px; padding: 36px 38px; flex: 1; }
+  .card h3 { font: 600 31px/1.25 var(--sans); margin: 0 0 14px; }
+  .card p { font-size: 26px; line-height: 1.45; color: var(--secondary); margin: 0; }
+  .card .big { font: 600 78px/1 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -0.03em; display: block; margin-bottom: 10px; }
+  .card .big.floor { color: var(--floor); }
+  .card .big.brand { color: var(--brand); }
+
+  ul.points { list-style: none; margin: 38px 0 0; padding: 0; max-width: 1520px; }
+  ul.points li { font-size: 31px; line-height: 1.46; margin: 0 0 24px; padding-left: 44px; position: relative; color: var(--secondary); }
+  ul.points li::before { content: ""; position: absolute; left: 0; top: 18px; width: 22px; height: 3px; border-radius: 2px; background: var(--brand); }
+  ul.points b { color: var(--ink); font-weight: 600; }
+
+  .chain { margin-top: 30px; padding-left: 40px; position: relative; max-width: 1660px; }
+  .chain::before { content: ""; position: absolute; left: 9px; top: 24px; bottom: 30px; width: 3px;
+                   background: color-mix(in srgb, var(--brand) 30%, transparent); }
+  .step { position: relative; padding: 12px 0 16px; }
+  .step::before { content: ""; position: absolute; left: -40px; top: 20px; width: 21px; height: 21px;
+                  border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 6px var(--page); }
+  .step:last-child::before { background: var(--floor); }
+  .step b { font-size: 31px; }
+  .step p { font-size: 27px; line-height: 1.42; color: var(--secondary); margin: 8px 0 0; }
+
+  table.tx { width: 100%; border-collapse: collapse; margin-top: 40px; font-variant-numeric: tabular-nums; }
+  table.tx th { text-align: left; font-size: 23px; font-weight: 600; color: var(--secondary); padding: 0 0 16px; border-bottom: 1px solid var(--separator); }
+  table.tx td { font-size: 30px; padding: 22px 0; border-bottom: 1px solid var(--separator); }
+  table.tx td.n { font-family: var(--mono); font-size: 26px; }
+  table.tx td.after { color: var(--floor); }
+  table.tx tr:last-child td { border-bottom: none; }
+
+  .note { font-size: 25px; color: var(--secondary); margin: 28px 0 0; max-width: 1620px; line-height: 1.45; }
+  .note b { color: var(--ink); }
+
+  .title-slide { display: flex; flex-direction: column; justify-content: center; }
+  .rule { width: 190px; height: 5px; background: var(--brand); border-radius: 3px; margin: 44px 0 40px; }
+  .badge { display: inline-flex; align-self: flex-start; font-size: 25px; font-weight: 600; color: var(--floor);
+           border: 2px solid color-mix(in srgb, var(--floor) 45%, transparent); border-radius: 999px; padding: 10px 24px; margin-top: 44px; }
+  .final { display: flex; gap: 20px; margin-top: 50px; flex-wrap: wrap; }
+  .final a { font-size: 29px; color: var(--brand); background: var(--card); border: 1px solid var(--separator);
+             border-radius: 16px; padding: 18px 26px; text-decoration: none; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<!-- 1 -->
+<section class="slide title-slide">
+  <p class="kicker">KeeperHub &middot; The Agent Economy &middot; September 2026</p>
+  <h1>Runway</h1>
+  <div class="rule"></div>
+  <p class="lede">A treasury pays people every second.<br><b>This decides who keeps getting
+    paid when it runs short</b> — and never holds the keys.</p>
+  <span class="badge">Finalist &middot; 10 of 139 submissions</span>
+  <div class="brand"><span class="mark"><img src="../docs/brand/runway-logo-512.png" alt=""></span> Runway</div>
+  <div class="no">1</div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <p class="kicker">The problem</p>
+  <h2>Superfluid announces nothing<br>while the money drains.</h2>
+  <p class="lede">A treasury pays salaries as streams. Money leaves the account every second —
+  and there is <b>no event, no log to index, no threshold crossing</b> to watch.</p>
+  <ul class="points">
+    <li>When the available balance reaches zero, <b>anyone may liquidate the sender</b> and take
+      the locked buffer.</li>
+    <li><b>Every stream from that treasury collapses in the same block.</b> Not the smallest
+      first, not the least important — all of them, at once.</li>
+    <li>Payroll stops for everyone, with no warning, and the first person to notice is the one
+      who was not paid.</li>
+  </ul>
+  <div class="brand"><span class="mark"><img src="../docs/brand/runway-logo-512.png" alt=""></span> Runway</div>
+  <div class="no">2</div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <p class="kicker">The design decision everything rests on</p>
+  <h2>The agent holds a mandate,<br><em>not the keys.</em></h2>
+  <p class="lede">Runway never holds the treasury's private key and <b>cannot be given it</b>. It
+  operates through Superfluid's own access-control list — granted in one transaction, revoked in
+  one transaction, enforced by the CFA contract rather than by Runway's code.</p>
+  <div class="cols">
+    <div class="card"><h3><code>permissions = 6</code></h3>
+      <p>Update and delete only — deliberately not 7. The contract reverts a <code>createFlow</code>
+        from this operator. It can throttle or close a stream; it can never open one to an address
+        of its own choosing.</p></div>
+    <div class="card"><h3>A flow-rate allowance</h3>
+      <p>Set to the sum of the committed rates. It can restore what was agreed and cannot
+        exceed it.</p></div>
+    <div class="card"><h3>Revocable without us</h3>
+      <p>The treasury calls the same function with <code>permissions = 0</code>. Runway's
+        cooperation is not required, and that is the point.</p></div>
+  </div>
+  <div class="brand"><span class="mark"><img src="../docs/brand/runway-logo-512.png" alt=""></span> Runway</div>
+  <div class="no">3</div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <p class="kicker">What one tick does</p>
+  <div class="chain">
+    <div class="step"><b>Read</b>
+      <p>Balance, deposit, and every stream's live rate, off the chain. If any read fails, the
+        tick fails — <b>it never decides on partial facts</b>.</p></div>
+    <div class="step"><b>Decide</b>
+      <p>A pure function of those facts and a policy the treasury owns. Shed discretionary first,
+        then standard, then critical — <b>each stopping at its floor</b>.</p></div>
+    <div class="step"><b>Execute</b>
+      <p>One <code>superfluid/update-flow</code> per adjusted stream through KeeperHub, every
+        parameter literal, each carrying an idempotency key derived from the work rather than
+        from the attempt.</p></div>
+    <div class="step"><b>Verify</b>
+      <p>Read every adjusted stream back. <b>A mined receipt proves a transaction landed; only a
+        read proves the stream changed rate.</b></p></div>
+    <div class="step"><b>Escalate</b>
+      <p>On an incomplete read, a rejected mandate, an unknown write outcome, or a budget the
+        floors cannot meet. <b>Silence is never the answer to a case the policy does not
+        cover.</b></p></div>
+  </div>
+  <div class="brand"><span class="mark"><img src="../docs/brand/runway-logo-512.png" alt=""></span> Runway</div>
+  <div class="no">4</div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <p class="kicker">It has actually run &middot; Ethereum Sepolia, 8 September 2026</p>
+  <h2>Runway fell from 214 hours to 23.<br>Three streams, three transactions.</h2>
+  <table class="tx">
+    <tr><th>Stream</th><th>Rate before</th><th>Rate after</th><th>Outcome</th></tr>
+    <tr><td>Discretionary</td><td class="n">57&nbsp;860&nbsp;765&nbsp;330</td>
+      <td class="n after">11&nbsp;572&nbsp;153&nbsp;066</td><td>read back at its floor</td></tr>
+    <tr><td>Standard</td><td class="n">86&nbsp;791&nbsp;147&nbsp;994</td>
+      <td class="n after">21&nbsp;697&nbsp;786&nbsp;998</td><td>read back at its floor</td></tr>
+    <tr><td>Critical</td><td class="n">144&nbsp;651&nbsp;913&nbsp;324</td>
+      <td class="n after">86&nbsp;791&nbsp;147&nbsp;994</td><td>read back at its floor</td></tr>
+  </table>
+  <p class="note">Wei per second, so the numbers are exact rather than rounded. All three landed
+    and all three rates were read back off the chain. The floors still could not close
+    79&nbsp;664&nbsp;745&nbsp;201 wei/sec, so <b>a <code>floors-exceed-budget</code> escalation was
+    raised for the remainder</b> — the agent stopped at the floors instead of choosing who to cut.</p>
+  <div class="brand"><span class="mark"><img src="../docs/brand/runway-logo-512.png" alt=""></span> Runway</div>
+  <div class="no">5</div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <p class="kicker">Why you can believe those numbers</p>
+  <h2>The evidence document is <em>parsed</em>,<br>not written.</h2>
+  <p class="lede"><code>pnpm test:evidence</code> reads every hash, link, block number and rate
+  back out of the captured run record, and <b>fails if the document disagrees</b>.</p>
+  <ul class="points">
+    <li><b>The gate shipped red.</b> The document carried a sentinel no real value could equal, so
+      no number could be written into it before a real run produced one.</li>
+    <li>That is the difference between a figure in a README and a figure someone can check —
+      and it is the only reason a reader should trust the slide before this one.</li>
+  </ul>
+  <div class="brand"><span class="mark"><img src="../docs/brand/runway-logo-512.png" alt=""></span> Runway</div>
+  <div class="no">6</div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <p class="kicker">What it refuses to do</p>
+  <h2>Guess, choose for you, or go quiet.</h2>
+  <ul class="points">
+    <li><b>Reads fail closed.</b> A partial read raises an error listing every failure. A treasury
+      keeper that guesses when the chain is unreachable is worse than one that stops.</li>
+    <li><b>It never cuts below a floor.</b> When the floors together still exceed the budget, it
+      does not decide who matters least — it stops and hands the remainder to a human.</li>
+    <li><b>An escalation that was not delivered is recorded as not delivered.</b> Posted to the
+      policy's webhook, retried with a widening delay under a hard timeout, and the delivery
+      outcome written down either way.</li>
+    <li><b>It cannot pay anyone new.</b> Not as a policy — as a contract permission it was never
+      granted.</li>
+  </ul>
+  <div class="brand"><span class="mark"><img src="../docs/brand/runway-logo-512.png" alt=""></span> Runway</div>
+  <div class="no">7</div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <p class="kicker">Built on</p>
+  <h2>Superfluid for the mandate.<br>KeeperHub for the execution.</h2>
+  <p class="lede">The run is recorded as JSON and rendered to a self-contained HTML report — no
+  scripts, no remote resources, everything escaped. <b>The record is the product as much as the
+  decision is.</b></p>
+  <div class="final">
+    <a href="https://github.com/Yoh5/runway">github.com/Yoh5/runway</a>
+    <a href="https://sepolia.etherscan.io/tx/0xc58483cd49462cb70e92859ce3518d10d2e6a2a7e39aaddf6f9c04af0a200d5a">the first transaction, on Sepolia</a>
+  </div>
+  <div class="brand"><span class="mark"><img src="../docs/brand/runway-logo-512.png" alt=""></span> Runway</div>
+  <div class="no">8</div>
+</section>
+
+</body>
+</html>
